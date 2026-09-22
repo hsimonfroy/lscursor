@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Large-Scale Cursor</title>
+<meta name="description" content="Tweaking the knobs of the cosmic web: an interactive large-scale-structure simulator in the browser.">
+<link rel="icon" href="data:,"><link rel="stylesheet" href="style.css">
+<style>
+  body { padding: 12px clamp(10px, 3vw, 20px) 8px; }
+  /* Wide: controls and power spectrum stacked on the left, the map on the right.
+     Narrow: controls, map, power spectrum, one column.
+     The map's side is as large as fits with the footer still on screen - the
+     viewport height minus the title, subtitle, footer and padding - and never
+     so wide that the controls column drops under 300 px. The grid is given the
+     map's height, so the left column can never push the page taller. */
+  .wrap { --stage: clamp(420px, min(100vh - 158px, 100vw - 370px), 760px);
+          display: grid; gap: 20px 24px; justify-content: center; align-items: start;
+          height: var(--stage);
+          grid-template-columns: minmax(300px, 580px) var(--stage);
+          grid-template-rows: auto minmax(0, 1fr);
+          grid-template-areas: "controls stage" "pk stage"; }
+  /* dvh tracks the visible height on mobile, where browser bars come and go */
+  @supports (height: 100dvh) {
+    .wrap { --stage: clamp(420px, min(100dvh - 158px, 100vw - 370px), 760px); }
+  }
+  .panel-controls { grid-area: controls; position: relative; padding: 14px 16px 6px; }
+  .panel-controls .ebar-title { padding-right: 40px; margin-bottom: 10px; }
+  .panel-controls .slider { margin-bottom: 12px; }
+  /* The plot keeps at most a 4:3 aspect (cqw = the panel's width) and gives up
+     height, never width, when the column is short. */
+  .panel-pk { grid-area: pk; align-self: start; max-height: 100%; padding: 10px 16px 8px;
+              display: flex; flex-direction: column; container-type: inline-size; }
+  .panel-pk .pk-body { height: 75cqw; min-height: 0; flex: 0 1 auto; }
+  .panel-pk .pk-canvas { position: absolute; inset: 0; height: 100%; }
+  /* container-type lets the map's own labels size themselves off its width (cqw) */
+  .stage { grid-area: stage; position: relative; width: var(--stage); height: var(--stage);
+           container-type: inline-size; border-radius: 6px; overflow: hidden; background: #000;
+           touch-action: none; cursor: ew-resize; user-select: none; }
+  .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #overlay { font-size: clamp(9.5px, 7px + 0.8cqw, 13px); }   /* read by drawOverlay() */
+  #obs { position: absolute; left: 3px; bottom: 2px; height: clamp(34px, 7.6cqw, 58px);
+         pointer-events: none; filter: drop-shadow(0 2px 5px rgba(0,0,0,0.85)); }
+  /* Wipe: a hairline plus two small arrowheads, no button - it should read as a
+     seam in the image, not as a control sitting on top of it. */
+  .wipe-line { position: absolute; top: 0; bottom: 0; width: 1px; margin-left: -0.5px;
+               background: rgba(255,255,255,0.85); box-shadow: 0 0 3px rgba(0,0,0,0.7);
+               pointer-events: none; }
+  .wipe-grip { position: absolute; top: 50%; width: 44px; height: 20px; margin: -10px 0 0 -22px;
+               color: #fff; opacity: 0.9; pointer-events: none;
+               filter: drop-shadow(0 1px 2px rgba(0,0,0,0.9)); transition: transform 0.15s, opacity 0.15s; }
+  .wipe-grip svg { display: block; }
+  .stage:hover .wipe-grip, .stage.is-dragging .wipe-grip { opacity: 1; transform: scale(1.15); }
+  .tag { position: absolute; top: 12px; font-size: clamp(10px, 7.5px + 0.6cqw, 12px);
+         letter-spacing: 0.08em; text-transform: uppercase; color: #fff; pointer-events: none;
+         text-shadow: 0 1px 4px rgba(0,0,0,0.95); }
+  .tag-sim { left: 12px; } .tag-obs { right: 12px; }
+  /* tucked into the corner, the same inset from the top and the right edge */
+  .panel-reset { position: absolute; top: 6px; right: 6px; width: 30px; height: 30px; padding: 0;
+                 display: flex; align-items: center; justify-content: center; cursor: pointer;
+                 border-radius: 50%; border: 1px solid #3a3a37; background: transparent;
+                 color: var(--ink-muted); }
+  .panel-reset:hover { color: var(--ink); background: #242422; border-color: #55544f; }
+  .panel-reset:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  @media (max-width: 860px) {
+    .wrap { height: auto; grid-template-columns: minmax(0, 760px); grid-template-rows: none;
+            grid-template-areas: "controls" "stage" "pk"; }
+    .stage { width: 100%; height: auto; aspect-ratio: 1; }
+  }
+</style>
+</head>
+<body>
+<h1 class="app-title">Large-Scale Cursor</h1>
+<p class="app-subtitle">Tweaking the knobs of the cosmic web</p>
+
+<div class="wrap">
+  <div class="panel panel-controls">
+    <button class="panel-reset" id="reset" type="button" title="Reset to the observation's parameters"
+            aria-label="Reset parameters">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+           stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M20.5 14.5a8.5 8.5 0 1 1-2.2-8.6L21.5 9"/><path d="M21.5 3.5V9H16"/>
+      </svg>
+    </button>
+    <div id="controls"></div>
+  </div>
+  <div class="stage" id="stage">
+    <canvas id="view"></canvas>
+    <canvas id="overlay"></canvas>
+    <img id="obs" src="assets/observer.png" alt="observer">
+    <div class="tag tag-sim">simulation</div>
+    <div class="tag tag-obs">observation</div>
+    <div class="wipe-line" id="wipeLine"></div>
+    <div class="wipe-grip" id="wipeGrip">
+      <svg viewBox="-22 -10 44 20" width="44" height="20" fill="currentColor" aria-hidden="true">
+        <path d="M-7 -6 L-16 0 L-7 6 Z M7 -6 L16 0 L7 6 Z"/>
+      </svg>
+    </div>
+  </div>
+  <div class="panel panel-pk" id="pk"></div>
+</div>
+
+<footer class="app-footer">
+  MIT License &middot; Copyright &copy; 2026
+  <a href="https://hsimonfroy.github.io/" target="_blank" rel="noopener noreferrer">Hugo Simon</a>
+</footer>
+
+<script type="module">
+import { createContext } from './src/gl/context.js';
+import { Pipeline } from './src/sim/pipeline.js';
+import { Renderer } from './src/sim/render.js';
+import { createState, setEnergy, derive, FIDUCIAL, GEOM } from './src/state.js';
+import { Slider, COLOURS } from './src/ui/sliders.js';
+import { EnergyBar } from './src/ui/energybar.js';
+import { PkPlot } from './src/ui/pkplot.js';
+import { pkEstimator } from './src/sim/pk.js';
+import { linearPower } from './src/cosmo/power.js';
+
+const DISPLAY = 760;
+const view = document.getElementById('view');
+view.width = view.height = DISPLAY;
+const { gl, caps } = createContext(view);
+if (!gl) { document.body.innerHTML = '<h1>WebGL2 unavailable</h1>'; throw new Error('no gl'); }
+
+// One grid only. The 128^3 draft was visibly coarse (10 Mpc/h cells) and the
+// whole point of the app is how the cosmic web LOOKS, so the extra FFT time is
+// the right trade.
+const grid = { nx: GEOM.nXY, ny: GEOM.nXY, nz: GEOM.nZ, slabCells: GEOM.slabCells,
+               boxXY: GEOM.boxXY, boxZ: GEOM.boxXY * GEOM.nZ / GEOM.nXY };
+const pipe = new Pipeline(gl, grid);
+const payload = pipe.createPayload();
+const rend = new Renderer(gl, caps, { width: DISPLAY, height: DISPLAY, grid });
+
+const state = createState();
+let clip = null, lastMs = 0, lastKind = '', dirtyCosmo = true, queued = false;
+
+// Colour range: the OBSERVATION's clip levels, on both sides of the wipe, so
+// one colour always means the same weighted count per pixel. Lower b1 or sigma8
+// and the knots dim and the voids fill in, which is what the eye expects.
+// (Re-stretching every frame between that frame's own extremes pins the peaks
+// to the top colour whatever b1 is, so less contrast shows up as the rest of
+// the image getting BRIGHTER - that was tried and dropped.)
+let truthClip = null;
+const syncGPU = () => { const px = new Uint8Array(4); gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); };
+
+function draw() {
+  const d = derive(state);
+  // Timed around the WHOLE frame on purpose. pipe.run only queues GPU commands
+  // and returns in a few ms; the real cost is not paid until quantiles() calls
+  // readPixels and forces a sync. Timing pipe.run alone reports ~6 ms for work
+  // that actually takes ~200 ms, which is worse than not measuring at all.
+  const t0 = performance.now();
+  const didFFT = dirtyCosmo;
+  if (dirtyCosmo) {
+    pipe.run(d.cosmo, d.A, payload, { seed: 1, smoothR: 4.0 });
+    rend.setCosmology(d.Omega_m);
+    dirtyCosmo = false;
+  }
+  rend.paint(payload, { f: state.f, b1: state.b1, f0: d.f0 });
+  clip = truthClip;
+  rend.composite(null, { ...clip, wipe: state.wipe });
+  syncGPU();   // the GPU runs asynchronously; without this lastMs is queueing time
+  lastMs = performance.now() - t0;
+  lastKind = didFFT ? 'cosmology (FFT + paint)' : 'paint only';
+  drawOverlay(d);
+  const key = `${state.Omega_b},${state.Omega_c},${state.f},${state.b1}`;
+  if (key !== pkKey) { pkKey = key; pkPlot.setSimulation(galaxyPk(d, state.b1, state.f)); }
+}
+
+// ---- power spectrum: linear theory, Kaiser monopole at z = 0 ----
+// Theory rather than a measurement of the map. The box holds too few modes at
+// BAO scales for ~5% wiggles to survive cosmic variance and the slab projection,
+// whereas the theory curve is smooth, exact and costs well under a millisecond,
+// so it simply follows every frame. It stops at the box's own Nyquist frequency.
+// Log-uniform in k, so a log k axis is evenly sampled and a linear one still
+// gets ~9 samples per BAO wiggle at the top end.
+const PK_N = 600, PK_KMIN = 1e-3, PK_KMAX = (Math.PI * grid.nx) / grid.boxXY;   // pi / 5 Mpc/h
+const pkK = new Float64Array(PK_N);
+for (let i = 0; i < PK_N; i++) pkK[i] = PK_KMIN * (PK_KMAX / PK_KMIN) ** (i / (PK_N - 1));
+const plinMemo = new WeakMap();   // derive() is memoised, so its result is a stable key
+function plin(d) {
+  let P = plinMemo.get(d);
+  if (!P) { P = linearPower(pkK, d.cosmo, d.A, new Float64Array(PK_N)); plinMemo.set(d, P); }
+  return P;
+}
+// Kaiser (1987), angle-averaged: <(b + f mu^2)^2> = b^2 + 2bf/3 + f^2/5
+const kaiser = (b, f) => b * b + (2 / 3) * b * f + (f * f) / 5;
+const galaxyPk = (d, b1, f) => {
+  const K = kaiser(b1, f);
+  return { k: pkK, P: Array.from(plin(d), (p) => p * K) };
+};
+const pkPlot = new PkPlot(document.getElementById('pk'),
+                          { note: 'Linear theory: Kaiser monopole at z = 0' });
+let pkKey = '';
+const schedule = () => { if (!queued) { queued = true; requestAnimationFrame(() => { queued = false; draw(); }); } };
+
+// ---- arcs of constant comoving distance, drawn over the colour map ----
+const overlay = document.getElementById('overlay');
+let overlayKey = '';
+function drawOverlay(d) {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const W = overlay.clientWidth, H = overlay.clientHeight;
+  // The arcs' redshift labels depend only on Omega_m and the canvas size, so a
+  // b1 or f frame skips this entirely (it was ~4 ms of 2-D canvas work).
+  const key = `${d.Omega_m},${W},${H},${dpr}`;
+  if (key === overlayKey) return;
+  overlayKey = key;
+  if (overlay.width !== W * dpr) { overlay.width = W * dpr; overlay.height = H * dpr; }
+  const g = overlay.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, W, H);
+  const lc = rend.lc;
+  // Cyan reads cleanly over inferno's warm ramp at every level, which white
+  // and yellow do not.
+  g.strokeStyle = 'rgba(150,232,255,0.85)';
+  g.lineWidth = 1.25;
+  g.setLineDash([7, 5]);
+  // size from CSS (#overlay font-size), which scales with the map's width
+  g.font = `${getComputedStyle(overlay).fontSize} ui-monospace, monospace`;
+  const off = parseFloat(getComputedStyle(overlay).fontSize) * 0.45;
+  // Every label is centred where its arc crosses the diagonal and runs along the
+  // tangent there, i.e. tilted 45 degrees. The three sit ~300 px apart on the
+  // diagonal, so they cannot collide, and the diagonal is the one place the
+  // 1500 Mpc/h arc is guaranteed to be on screen (it only spans ~31-59 deg).
+  const a = -Math.PI / 4;
+  for (const r of [500, 1000, 1500]) {
+    const px = (r / grid.boxXY) * W;   // observer at the bottom-left corner
+    g.beginPath();
+    g.arc(0, H, px, -Math.PI / 2, 0);
+    g.stroke();
+    const lx = Math.cos(a) * px, ly = H + Math.sin(a) * px;
+    g.save();
+    g.translate(lx, ly);
+    g.rotate(a + Math.PI / 2);         // run the text along the arc's tangent
+    g.textAlign = 'center';
+    g.setLineDash([]);
+    // distance on the outer side of the arc, redshift on the inner side
+    for (const [text, y, base] of [[`${r} Mpc/h`, -off, 'alphabetic'],
+                                   [`z = ${lc.zOf(r).toFixed(2)}`, off, 'top']]) {
+      g.textBaseline = base;
+      g.lineWidth = 3.5; g.strokeStyle = 'rgba(0,0,0,0.75)';
+      g.strokeText(text, 0, y);
+      g.fillStyle = 'rgba(180,240,255,0.98)';
+      g.fillText(text, 0, y);
+    }
+    g.restore();
+    g.setLineDash([7, 5]);
+    g.strokeStyle = 'rgba(150,232,255,0.85)';
+    g.lineWidth = 1.25;
+  }
+  g.setLineDash([]);
+}
+
+// ---- controls ----
+const host = document.getElementById('controls');
+const SYM = { Omega_b: 'Ω<sub>b</sub>', Omega_c: 'Ω<sub>c</sub>', Omega_L: 'Ω<sub>Λ</sub>' };
+const ebar = new EnergyBar(host, {
+  title: 'Energy content', variant: 'inside', legend: 'rows', colours: COLOURS, ink: '#1a1a19',
+  names: { Omega_b: 'Ordinary matter', Omega_c: 'Dark matter', Omega_L: 'Dark energy' },
+  symbols: SYM,
+  values: { Omega_b: state.Omega_b, Omega_c: state.Omega_c, Omega_L: state.Omega_L },
+  onChange: (v) => { setEnergy(state, v); dirtyCosmo = true; schedule(); },
+});
+const row = document.createElement('div');
+row.className = 'controls-row';
+host.appendChild(row);
+const sF = new Slider(row, { key: 'f', label: 'Redshift-space distortions <i>f</i>',
+  min: 0, max: 1.2, step: 0.01, value: state.f,
+  onInput: (v) => { state.f = v; schedule(); } });
+const sB = new Slider(row, { key: 'b1', label: 'Galaxy bias <i>b</i><sub>1</sub>',
+  min: 1, max: 2.5, step: 0.01, value: state.b1,
+  onInput: (v) => { state.b1 = v; schedule(); } });
+
+document.getElementById('reset').addEventListener('click', () => {
+  Object.assign(state, FIDUCIAL, { f: truthParams.f, b1: truthParams.b1 });
+  ebar.setValues({ ...FIDUCIAL });
+  sF.set(state.f); sB.set(state.b1);
+  dirtyCosmo = true; schedule();
+});
+
+// ---- wipe ----
+const stage = document.getElementById('stage');
+const line = document.getElementById('wipeLine'), grip = document.getElementById('wipeGrip');
+function setWipe(clientX) {
+  const r = stage.getBoundingClientRect();
+  state.wipe = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+  line.style.left = grip.style.left = `${state.wipe * 100}%`;
+  schedule();
+}
+stage.addEventListener('pointerdown', (e) => {
+  stage.setPointerCapture(e.pointerId); setWipe(e.clientX);
+  stage.classList.add('is-dragging');
+  const mv = (ev) => setWipe(ev.clientX);
+  const up = () => { stage.classList.remove('is-dragging');
+                     stage.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); };
+  stage.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
+});
+line.style.left = grip.style.left = `${state.wipe * 100}%`;
+
+// ---- bake the observation, then show the live side ----
+const truthParams = { ...FIDUCIAL, f: state.f, b1: state.b1 };
+{
+  const d = derive({ ...truthParams, wipe: 0 });
+  pipe.run(d.cosmo, d.A, payload, { seed: 1, smoothR: 4.0 });
+  rend.setCosmology(d.Omega_m);
+  truthClip = rend.bakeTruth(payload, { f: truthParams.f, b1: truthParams.b1, f0: d.f0 });
+  pkPlot.setObservation(galaxyPk(d, truthParams.b1, truthParams.f));
+}
+dirtyCosmo = true;
+draw();
+// The map is sized from the viewport, so the arcs are redrawn whenever it resizes.
+new ResizeObserver(() => drawOverlay(derive(state))).observe(stage);
+window.__done = true;
+window.__setParams = (p) => {
+  Object.assign(state, p);
+  if ('Omega_b' in p || 'Omega_c' in p || 'Omega_L' in p) dirtyCosmo = true;
+  ebar.setValues({ Omega_b: state.Omega_b, Omega_c: state.Omega_c, Omega_L: state.Omega_L });
+  sF.set(state.f); sB.set(state.b1);
+  line.style.left = grip.style.left = `${state.wipe * 100}%`;
+  draw();
+};
+// Per-stage timing of one paint-only frame, with a hard GPU sync after each
+// stage so every number is that stage's own cost.
+window.__profile = () => {
+  const out = {};
+  const sync = () => { const px = new Uint8Array(4); gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                       gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); };
+  let t = performance.now();
+  const lap = (k) => { sync(); const n = performance.now(); out[k] = +(n - t).toFixed(2); t = n; };
+  sync(); t = performance.now();
+  const d = derive(state);                                            lap('derive (JS)');
+  rend.paint(payload, { f: state.f, b1: state.b1, f0: d.f0 });        lap('paint (GPU points)');
+  rend.composite(null, { ...truthClip, wipe: state.wipe });           lap('composite (GPU)');
+  drawOverlay(d);                                                     lap('overlay (2D canvas)');
+  return out;
+};
+window.__profileCosmo = () => {
+  const prof = {};
+  const d = derive(state);
+  pipe.run(d.cosmo, d.A, payload, { seed: 1, smoothR: 4.0, profile: prof });
+  let t = performance.now();
+  rend.setCosmology(d.Omega_m);
+  prof['light-cone LUT (JS)'] = +(performance.now() - t).toFixed(2);
+  return prof;
+};
+// Raw accumulation buffer (one float per 5 Mpc/h pixel), for offline analysis.
+window.__accum = () => { rend.quantiles(); const n = rend.gw * rend.gh, out = new Array(n);
+  for (let i = 0; i < n; i++) out[i] = rend._qbuf[i * 4]; return out; };
+// The two spectra currently plotted, and the P(k) actually MEASURED from the
+// painted map (2-D, CPU FFT, ~5 ms) - not shown in the app, kept for checks.
+window.__pk = () => ({ sim: pkPlot.sim, obs: pkPlot.obs });
+let pkEst = null;
+window.__measurePk = () => (pkEst ??= pkEstimator(grid.nx, grid.boxXY))(rend.readAccum(), 4);
+window.__stats = () => ({ lastMs, clip, f: state.f, b1: state.b1, wipe: state.wipe,
+                          Omega: [state.Omega_b, state.Omega_c, state.Omega_L] });
+</script>
+</body>
+</html>

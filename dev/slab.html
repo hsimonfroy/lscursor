@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lscursor — slab pipeline check</title>
+<link rel="icon" href="data:,"><link rel="stylesheet" href="../style.css">
+<style>
+  body { padding: 24px; max-width: 1000px; }
+  table { border-collapse: collapse; width: 100%; font-family: ui-monospace, monospace; font-size: 12px; }
+  th, td { text-align: left; padding: 5px 10px; border-bottom: 1px solid var(--grid); }
+  th { color: var(--ink-muted); font-weight: 500; } td.n { text-align: right; }
+  .pass { color: #46a546; } .fail { color: #d9534f; }
+  h2 { font-size: 14px; margin: 24px 0 8px; }
+  #caps { color: var(--ink-muted); font-size: 12px; font-family: ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<h1>lscursor — slab pipeline check</h1>
+<p class="sub">The fused z-transform must reproduce the full 3-D FFT exactly, and be faster.</p>
+<div id="caps"></div><div id="out"></div>
+<canvas id="gl" width="1" height="1" style="display:none"></canvas>
+<script type="module">
+import { createContext } from '../src/gl/context.js';
+import { Pipeline } from '../src/sim/pipeline.js';
+import { derive, createState, GEOM } from '../src/state.js';
+
+const { gl, caps } = createContext(document.getElementById('gl'));
+document.getElementById('caps').textContent = `renderer: ${caps.renderer}`;
+const d = derive(createState());
+const out = document.getElementById('out');
+const rows = [];
+const flush = () => { out.innerHTML = rows.join(''); };
+
+function readPayload(p) {
+  const buf = new Float32Array(p.atlasW * p.atlasH * 4);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, p.fb);
+  gl.readPixels(0, 0, p.atlasW, p.atlasH, gl.RGBA, gl.FLOAT, buf);
+  return buf;
+}
+function time(pipe, payload, reps = 5) {
+  pipe.run(d.cosmo, d.A, payload, { seed: 1 }); readPayload(payload); // warm + sync
+  const ts = [];
+  const one = new Float32Array(4);
+  for (let i = 0; i < reps; i++) {
+    const t0 = performance.now();
+    pipe.run(d.cosmo, d.A, payload, { seed: 1 });
+    gl.bindFramebuffer(gl.FRAMEBUFFER, payload.fb);
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.FLOAT, one);   // force completion
+    ts.push(performance.now() - t0);
+  }
+  return ts.sort((a, b) => a - b)[Math.floor(reps / 2)];
+}
+
+// ---- 1. equivalence at nz = 64 ----
+const grid = (nz) => ({ nx: GEOM.nXY, ny: GEOM.nXY, nz, slabCells: GEOM.slabCells,
+                        boxXY: GEOM.boxXY, boxZ: GEOM.boxXY * nz / GEOM.nXY });
+{
+  const g = grid(64);
+  const ref = new Pipeline(gl, g, { mode: 'full3d' });
+  const fast = new Pipeline(gl, g, { mode: 'slab' });
+  const pr = ref.createPayload(), pf = fast.createPayload();
+  ref.run(d.cosmo, d.A, pr, { seed: 1 });
+  fast.run(d.cosmo, d.A, pf, { seed: 1 });
+  const a = readPayload(pr), b = readPayload(pf);
+
+  rows.push('<h2>Equivalence: slab vs full 3-D, 256×256×64, same seed</h2>' +
+    '<table><tr><th>field</th><th class="n">rms (reference)</th><th class="n">rel. L2 diff</th><th>result</th></tr>');
+  for (const [name, c] of [['Ψ_x', 0], ['Ψ_y', 1], ['δ_L', 2]]) {
+    let num = 0, den = 0;
+    for (let i = c; i < a.length; i += 4) { num += (a[i] - b[i]) ** 2; den += a[i] ** 2; }
+    const n = a.length / 4, rel = Math.sqrt(num / den);
+    // both are stored as fp16 (~1e-3 relative); agreement at that level is exact
+    const ok = rel < 2e-3;
+    rows.push(`<tr><td>${name}</td><td class="n">${Math.sqrt(den / n).toFixed(3)}</td>` +
+              `<td class="n">${rel.toExponential(2)}</td><td class="${ok ? 'pass' : 'fail'}">${ok ? 'PASS' : 'FAIL'}</td></tr>`);
+  }
+  rows.push('</table>');
+  const tr = time(ref, pr), tf = time(fast, pf);
+  rows.push('<h2>Speed, 256×256×64</h2><table><tr><th>pipeline</th><th class="n">cosmology change</th><th class="n">speed-up</th></tr>' +
+    `<tr><td>full 3-D FFT (previous)</td><td class="n">${tr.toFixed(1)} ms</td><td class="n">1.0×</td></tr>` +
+    `<tr><td>fused z + 2-D FFTs (new)</td><td class="n">${tf.toFixed(1)} ms</td><td class="n">${(tr / tf).toFixed(1)}×</td></tr></table>`);
+  flush();
+  [ref, fast].forEach((p) => p.dispose());
+}
+
+// ---- 2. how deep can the box go now? ----
+rows.push('<h2>Slab pipeline cost vs box depth (σ<sub>Ψ</sub> error from the earlier depth study)</h2>' +
+  '<table><tr><th>n<sub>z</sub></th><th>L<sub>z</sub></th><th class="n">σ<sub>Ψ</sub> error</th><th class="n">cosmology change</th></tr>');
+const err = { 32: '+16.6%', 64: '+4.1%', 128: '+0.6%', 256: '0 (full cube)' };
+for (const nz of [32, 64, 128, 256]) {
+  const g = grid(nz);
+  const p = new Pipeline(gl, g, { mode: 'slab' });
+  const pl = p.createPayload();
+  const t = time(p, pl);
+  rows.push(`<tr><td>${nz}</td><td>${g.boxZ} Mpc/h</td><td class="n">${err[nz]}</td><td class="n">${t.toFixed(1)} ms</td></tr>`);
+  flush();
+  p.dispose();
+}
+rows.push('</table>');
+flush();
+window.__done = true;
+</script>
+</body>
+</html>

@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lscursor — FFT check</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../style.css">
+<style>
+  body { padding: 24px; max-width: 980px; }
+  table { border-collapse: collapse; width: 100%; font-family: ui-monospace, monospace; font-size: 12px; }
+  th, td { text-align: left; padding: 5px 10px; border-bottom: 1px solid var(--grid); }
+  th { color: var(--ink-muted); font-weight: 500; }
+  td.n { text-align: right; }
+  .pass { color: #46a546; } .fail { color: #d9534f; }
+  h2 { font-size: 14px; margin: 26px 0 8px; font-weight: 600; }
+  #caps { color: var(--ink-muted); font-size: 12px; font-family: ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<h1>lscursor — FFT check</h1>
+<p class="sub">Phase 2 gate. Nothing downstream is written until every row passes
+and the timings match the budget.</p>
+<div id="caps"></div>
+<div id="out"></div>
+<canvas id="gl" width="1" height="1" style="display:none"></canvas>
+
+<script type="module">
+import { createContext } from '../src/gl/context.js';
+import { pingPong, readFloat } from '../src/gl/glutil.js';
+import { planFFT, makeIndexer, atlasLayout } from '../src/gl/fft.js';
+
+const { gl, caps } = createContext(document.getElementById('gl'));
+document.getElementById('caps').innerHTML = gl
+  ? `renderer: ${caps.renderer}<br>tier: ${caps.tier} &nbsp; MAX_TEXTURE_SIZE: ${caps.maxTex}
+     &nbsp; float blend: ${caps.floatBlend} &nbsp; timer query: ${!!caps.timer}`
+  : `<span class="fail">no WebGL2: ${caps.reason}</span>`;
+if (!gl) throw new Error('no WebGL2');
+
+const out = document.getElementById('out');
+const rows = [];
+function section(t) { rows.push(`<h2>${t}</h2><table><tr><th>case</th><th>metric</th><th class="n">value</th><th>result</th></tr>`); }
+function row(c, m, v, ok) {
+  rows.push(`<tr><td>${c}</td><td>${m}</td><td class="n">${v}</td>` +
+            `<td class="${ok ? 'pass' : 'fail'}">${ok ? 'PASS' : 'FAIL'}</td></tr>`);
+}
+function endSection() { rows.push('</table>'); out.innerHTML = rows.join(''); }
+
+/** Upload a packed atlas array and run a transform. */
+function upload(gl, pp, data, w, h) {
+  gl.bindTexture(gl.TEXTURE_2D, pp.src);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, w, h, gl.RGBA, gl.FLOAT, data);
+}
+
+/** Naive 3D DFT reference (small grids only). Field 0 = channels xy. */
+function dft3(re, im, nx, ny, nz, sign) {
+  const oR = new Float64Array(re.length), oI = new Float64Array(re.length);
+  const idx = (x, y, z) => (z * ny + y) * nx + x;
+  for (let kz = 0; kz < nz; kz++) for (let ky = 0; ky < ny; ky++) for (let kx = 0; kx < nx; kx++) {
+    let sr = 0, si = 0;
+    for (let z = 0; z < nz; z++) for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
+      const ph = sign * 2 * Math.PI * ((kx * x) / nx + (ky * y) / ny + (kz * z) / nz);
+      const c = Math.cos(ph), s = Math.sin(ph), j = idx(x, y, z);
+      sr += re[j] * c - im[j] * s;
+      si += re[j] * s + im[j] * c;
+    }
+    oR[idx(kx, ky, kz)] = sr; oI[idx(kx, ky, kz)] = si;
+  }
+  return { re: oR, im: oI };
+}
+
+// ---------- correctness against a reference DFT ----------
+section('Correctness vs naive DFT (8x8x4, both packed fields)');
+{
+  const [nx, ny, nz] = [8, 8, 4];
+  const { atlasW, atlasH } = atlasLayout(nx, ny, nz);
+  const ix = makeIndexer(nx, ny, nz);
+  const plan = planFFT(gl, nx, ny, nz);
+  const pp = pingPong(gl, atlasW, atlasH, gl.RGBA32F);
+  const N = nx * ny * nz;
+
+  const cases = {
+    'delta at (0,0,0)': (x, y, z) => (x === 0 && y === 0 && z === 0 ? 1 : 0),
+    'delta at (3,5,2)': (x, y, z) => (x === 3 && y === 5 && z === 2 ? 1 : 0),
+    'plane wave kx=2': (x) => Math.cos((2 * Math.PI * 2 * x) / nx),
+    'gaussian': (x, y, z) => Math.exp(-(((x - 4) ** 2 + (y - 4) ** 2 + (z - 2) ** 2) / 4)),
+    'random': () => Math.random() * 2 - 1,
+  };
+
+  for (const [name, fn] of Object.entries(cases)) {
+    const re = new Float64Array(N), im = new Float64Array(N);
+    const re1 = new Float64Array(N), im1 = new Float64Array(N);
+    const data = new Float32Array(atlasW * atlasH * 4);
+    for (let z = 0; z < nz; z++) for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
+      const j = (z * ny + y) * nx + x;
+      re[j] = fn(x, y, z); im[j] = 0;
+      re1[j] = fn(y, x, z) * 0.5; im1[j] = fn(x, z, y) * 0.25; // a second, different field
+      const o = ix.at(x, y, z) * 4;
+      data[o] = re[j]; data[o + 1] = im[j]; data[o + 2] = re1[j]; data[o + 3] = im1[j];
+    }
+    upload(gl, pp, data, atlasW, atlasH);
+    plan.forward(pp);
+    const got = readFloat(gl, pp.src === pp.fbA.tex ? pp.fbA : pp.fbB, atlasW, atlasH);
+
+    const ref0 = dft3(re, im, nx, ny, nz, -1);
+    const ref1 = dft3(re1, im1, nx, ny, nz, -1);
+    let num = 0, den = 0;
+    for (let z = 0; z < nz; z++) for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
+      const j = (z * ny + y) * nx + x, o = ix.at(x, y, z) * 4;
+      for (const [g, r] of [[got[o], ref0.re[j]], [got[o + 1], ref0.im[j]],
+                            [got[o + 2], ref1.re[j]], [got[o + 3], ref1.im[j]]]) {
+        num += (g - r) ** 2; den += r * r;
+      }
+    }
+    const err = Math.sqrt(num / den);
+    row(name, 'relative L2 vs DFT', err.toExponential(2), err < 1e-5);
+  }
+  pp.dispose(); plan.dispose();
+}
+endSection();
+
+// ---------- round trip + timing at production sizes ----------
+section('Round trip and timing at production sizes');
+for (const [nx, ny, nz, label] of [[128, 128, 32, 'draft'], [256, 256, 64, 'full']]) {
+  const { atlasW, atlasH } = atlasLayout(nx, ny, nz);
+  if (atlasW > caps.maxTex || atlasH > caps.maxTex) { row(`${nx}x${ny}x${nz}`, 'atlas fits', `${atlasW}x${atlasH}`, false); continue; }
+  const ix = makeIndexer(nx, ny, nz);
+  const plan = planFFT(gl, nx, ny, nz);
+  const pp = pingPong(gl, atlasW, atlasH, gl.RGBA32F);
+
+  const data = new Float32Array(atlasW * atlasH * 4);
+  let seed = 12345;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296 - 0.5; };
+  for (let z = 0; z < nz; z++) for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
+    const o = ix.at(x, y, z) * 4;
+    data[o] = rnd(); data[o + 1] = 0; data[o + 2] = rnd(); data[o + 3] = 0;
+  }
+  upload(gl, pp, data, atlasW, atlasH);
+  plan.forward(pp);
+  plan.inverse(pp);
+  const back = readFloat(gl, pp.src === pp.fbA.tex ? pp.fbA : pp.fbB, atlasW, atlasH);
+  let num = 0, den = 0;
+  for (let i = 0; i < data.length; i++) { num += (back[i] - data[i]) ** 2; den += data[i] ** 2; }
+  const err = Math.sqrt(num / den);
+  // Gate: the payload is stored as fp16 (~1e-3 relative), so anything below 1e-4
+  // is lost in quantisation. fp32 across 2 x ${plan.stages} stages cannot do much
+  // better than ~1e-6 anyway.
+  row(`${label} ${nx}x${ny}x${nz}`, `round-trip L2 (${plan.stages} stages, atlas ${atlasW}x${atlasH})`,
+      err.toExponential(2), err < 1e-4);
+
+  // timing: median of several inverse chains, wall clock with a forced flush
+  upload(gl, pp, data, atlasW, atlasH);
+  plan.inverse(pp); readFloat(gl, pp.fbA, 1, 1); // warm up + flush
+  const ts = [];
+  for (let r = 0; r < 5; r++) {
+    const t0 = performance.now();
+    plan.inverse(pp);
+    readFloat(gl, pp.src === pp.fbA.tex ? pp.fbA : pp.fbB, 1, 1); // force completion
+    ts.push(performance.now() - t0);
+  }
+  ts.sort((a, b) => a - b);
+  const ms = ts[2];
+  row(`${label} ${nx}x${ny}x${nz}`, 'one inverse chain, wall clock incl. flush (median of 5)',
+      ms.toFixed(1) + ' ms', ms < (nz === 64 ? 400 : 100));
+  if (caps.timer) {
+    const q = gl.createQuery();
+    gl.beginQuery(caps.timer.TIME_ELAPSED_EXT, q);
+    plan.inverse(pp);
+    gl.endQuery(caps.timer.TIME_ELAPSED_EXT);
+    gl.flush();
+    await new Promise((res) => {
+      const poll = () => {
+        if (gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE) &&
+            !gl.getParameter(caps.timer.GPU_DISJOINT_EXT)) {
+          const gms = gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6;
+          row(`${label} ${nx}x${ny}x${nz}`, 'one inverse chain, GPU time only',
+              gms.toFixed(1) + ' ms', gms < (nz === 64 ? 400 : 100));
+          res();
+        } else setTimeout(poll, 8);
+      };
+      poll();
+    });
+  }
+  pp.dispose(); plan.dispose();
+}
+endSection();
+window.__done = true;
+</script>
+</body>
+</html>
