@@ -9,7 +9,7 @@
 }
 
 :root {
-  --surface: #111110;
+  --surface: #000000;   /* page: pure black, as hollved */
   --surface-2: #1a1a19;
   --ink: #e8e6e3;
   --ink-muted: #8a8886;
@@ -52,7 +52,8 @@ h1 { font-size: 18px; font-weight: 600; margin: 0 0 2px; }
   text-align: center; margin: 0 0 22px;
 }
 
-.panel { background: var(--surface-2); border-radius: 8px; padding: 16px; }
+/* 14 px corners: close to the round reset button tucked into the controls panel */
+.panel { background: var(--surface-2); border-radius: 14px; padding: 16px; }
 
 /* ---- maths ----
    Default <sub> rendering drags the line box around and sits too low. Zero the
