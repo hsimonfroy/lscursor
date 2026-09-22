@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lscursor — cosmology check</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../style.css">
+<style>
+  body { padding: 24px; }
+  .wrap { display: grid; grid-template-columns: minmax(320px, 620px) 1fr; gap: 20px; max-width: 1560px; }
+  .charts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .charts canvas { width: 100%; height: 220px; border-radius: 6px; display: block; }
+  @media (max-width: 860px) {
+    .wrap { grid-template-columns: 1fr; }
+    .charts { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<h1>lscursor — cosmology check</h1>
+<p class="sub">Phase 1. Every curve is computed by the same JS the app will use.
+Dashed grey is the fiducial Planck cosmology.</p>
+
+<div class="wrap">
+  <div class="panel">
+    <div id="sliders"></div>
+    <dl class="readout" id="readout"></dl>
+  </div>
+  <div class="charts">
+    <canvas id="pk"></canvas>
+    <canvas id="tk"></canvas>
+    <canvas id="dz"></canvas>
+    <canvas id="fz"></canvas>
+  </div>
+</div>
+
+<script type="module">
+import { createState, setEnergy, derive, FIDUCIAL, FIXED, GEOM } from '../src/state.js';
+import { transferEH98 } from '../src/cosmo/eh98.js';
+import { linearPower } from '../src/cosmo/power.js';
+import { interp, aOfChi } from '../src/cosmo/background.js';
+import { Slider, COLOURS } from '../src/ui/sliders.js';
+import { EnergyBar } from '../src/ui/energybar.js';
+import { Plot } from '../src/ui/plot.js';
+
+const state = createState();
+
+// k grid spanning exactly the modes the 1280 Mpc/h box will actually carry
+const kf = 2 * Math.PI / GEOM.boxXY, kny = Math.PI * GEOM.nXY / GEOM.boxXY;
+const K = new Float64Array(600);
+for (let i = 0; i < K.length; i++) K[i] = kf * Math.pow((Math.sqrt(3) * kny) / kf, i / (K.length - 1));
+const Z = new Float64Array(120);
+for (let i = 0; i < Z.length; i++) Z[i] = (i / (Z.length - 1)) * 1.0;
+
+const plots = {
+  pk: new Plot(document.getElementById('pk'), { title: 'P(k) — linear matter power', xlabel: 'k [h/Mpc]', ylabel: 'P(k) [(Mpc/h)³]', xlog: true, ylog: true, color: COLOURS.Omega_c }),
+  tk: new Plot(document.getElementById('tk'), { title: 'T(k) — transfer function', xlabel: 'k [h/Mpc]', ylabel: 'T(k)', xlog: true, ylog: true, color: COLOURS.Omega_b }),
+  dz: new Plot(document.getElementById('dz'), { title: 'D(z) — growth factor', xlabel: 'z', ylabel: 'D(z)', color: COLOURS.Omega_L }),
+  fz: new Plot(document.getElementById('fz'), { title: 'f(z) — growth rate', xlabel: 'z', ylabel: 'f(z)', color: COLOURS.f }),
+};
+
+const fidState = { ...FIDUCIAL, f: state.f, b1: 2 };
+const fid = derive(fidState);
+const fidCosmo = { Omega_b: FIDUCIAL.Omega_b, Omega_m: FIDUCIAL.Omega_b + FIDUCIAL.Omega_c, ...FIXED };
+const refP = Array.from(linearPower(K, fidCosmo, fid.A));
+const refT = Array.from(transferEH98(K, fidCosmo));
+const refD = Array.from(Z).map((z) => interp(1 / (1 + z), fid.growth.a, fid.growth.D));
+const refF = Array.from(Z).map((z) => interp(1 / (1 + z), fid.growth.a, fid.growth.f));
+
+const sliders = {};
+const host = document.getElementById('sliders');
+
+// One bar, two dividers: Omega_b + Omega_c + Omega_L = 1 by construction.
+// 'values' puts the number inside each segment where it fits and keeps the
+// names in the legend - see dev/energybar.html for the variants this was
+// chosen from. Switch variant to 'inside' for names in the bar too.
+const ebar = new EnergyBar(host, {
+  title: 'Energy content',
+  variant: 'inside',
+  legend: 'rows',
+  colours: COLOURS,
+  names: { Omega_b: 'Ordinary matter', Omega_c: 'Dark matter', Omega_L: 'Dark energy' },
+  symbols: { Omega_b: 'Ω<sub>b</sub>', Omega_c: 'Ω<sub>c</sub>', Omega_L: 'Ω<sub>Λ</sub>' },
+  values: { Omega_b: state.Omega_b, Omega_c: state.Omega_c, Omega_L: state.Omega_L },
+  onChange: (v) => { setEnergy(state, v); sync(); },
+});
+
+// These two go side by side when the panel is wide enough, stacked when not.
+const scalarRow = document.createElement('div');
+scalarRow.className = 'controls-row';
+host.appendChild(scalarRow);
+sliders.f = new Slider(scalarRow, {
+  key: 'f', label: 'Redshift-space distortions <i>f</i>', step: 0.01, min: 0, max: 1.2, value: state.f,
+  onInput: (v) => { state.f = v; sync(); },
+});
+sliders.b1 = new Slider(scalarRow, {
+  key: 'b1', label: 'Galaxy bias <i>b</i><sub>1</sub>', step: 0.01, min: 1, max: 2, value: state.b1,
+  onInput: (v) => { state.b1 = v; sync(); },
+});
+
+function sync() {
+  for (const k of ['f', 'b1']) sliders[k].set(state[k]);
+  const d = derive(state);
+
+  plots.pk.setData(K, linearPower(K, d.cosmo, d.A), refP);
+  plots.tk.setData(K, transferEH98(K, d.cosmo), refT);
+  plots.dz.setData(Z, Array.from(Z).map((z) => interp(1 / (1 + z), d.growth.a, d.growth.D)), refD);
+  plots.fz.setData(Z, Array.from(Z).map((z) => interp(1 / (1 + z), d.growth.a, d.growth.f)), refF);
+
+  const zCorner = 1 / aOfChi(Math.SQRT2 * GEOM.boxXY, d.dist) - 1;
+  const Dcorner = interp(aOfChi(Math.SQRT2 * GEOM.boxXY, d.dist), d.growth.a, d.growth.D);
+  const rows = [
+    ['Ω<sub>m</sub>', d.Omega_m.toFixed(4)],
+    ['Ω<sub>b</sub> + Ω<sub>c</sub> + Ω<sub>Λ</sub>', (state.Omega_b + state.Omega_c + state.Omega_L).toFixed(6)],
+    ['σ<sub>8</sub> (derived)', d.sigma8.toFixed(3)],
+    ['<i>f</i>(<i>z</i>=0) ΛCDM', d.f0.toFixed(4)],
+    ['<i>z</i> at far corner', zCorner.toFixed(3)],
+    ['<i>D</i> at far corner', Dcorner.toFixed(3)],
+    ['cell size', (GEOM.boxXY / GEOM.nXY).toFixed(1) + ' Mpc/h'],
+    ['<i>k</i><sub>Nyq</sub>', kny.toFixed(3) + ' h/Mpc'],
+  ];
+  document.getElementById('readout').innerHTML =
+    rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+}
+
+addEventListener('resize', () => Object.values(plots).forEach((p) => p.draw()));
+sync();
+</script>
+</body>
+</html>

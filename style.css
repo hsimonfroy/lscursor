@@ -1,0 +1,202 @@
+/* Title face, shared with hollved ("Lost in expansion"): URW Z003 Medium
+   Italic, from the urw-base35 set (AGPL-3.0 with font exception). */
+@font-face {
+  font-family: 'Z003';
+  src: url('assets/fonts/Z003-MediumItalic.otf') format('opentype');
+  font-style: italic;
+  font-weight: 500;
+  font-display: swap;
+}
+
+:root {
+  --surface: #111110;
+  --surface-2: #1a1a19;
+  --ink: #e8e6e3;
+  --ink-muted: #8a8886;
+  --grid: #2a2a28;
+  /* Power-spectrum series, taken from the map's own inferno colour map: the
+     orange is inferno(0.65) as is; the violet is inferno(0.3)'s hue lifted in
+     lightness, because the raw sample is 2.3:1 on the panel and a 2 px line
+     vanishes. Validated as a pair on --surface-2 (CVD dE 23.5, both >= 3:1). */
+  --pk-sim: #ea632a;
+  --pk-obs: #b050b8;
+
+  /* Fluid type. Each size runs linearly from a phone (360 px wide) to a
+     desktop (>= 900 px) and is clamped at both ends, so there are no
+     breakpoints to maintain and nothing jumps as a window is resized. */
+  --fs-body:     clamp(13px, 11.7px + 0.37vw, 15px);
+  --fs-ui:       clamp(12px, 10.7px + 0.37vw, 14px);   /* labels, legends, values */
+  --fs-small:    clamp(11px, 9.7px + 0.37vw, 13px);    /* chart ticks, captions */
+  --fs-sym:      clamp(13px, 11.7px + 0.37vw, 15px);   /* symbols inside the bar */
+  --fs-title:    clamp(34px, 22px + 3.4vw, 52px);
+  --fs-subtitle: clamp(15px, 13.3px + 0.6vw, 19px);
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0;
+  background: var(--surface); color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: var(--fs-body);
+}
+h1 { font-size: 18px; font-weight: 600; margin: 0 0 2px; }
+.sub { color: var(--ink-muted); font-size: 12px; margin: 0 0 18px; }
+
+/* App title, styled like hollved's home title. */
+.app-title {
+  font-family: 'Z003', cursive; font-style: italic; font-weight: 500;
+  font-size: var(--fs-title); line-height: 1.05; letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.99); text-align: center; margin: 4px 0 6px;
+}
+.app-subtitle {
+  font-size: var(--fs-subtitle); color: rgba(255, 255, 255, 0.70);
+  text-align: center; margin: 0 0 22px;
+}
+
+.panel { background: var(--surface-2); border-radius: 8px; padding: 16px; }
+
+/* ---- maths ----
+   Default <sub> rendering drags the line box around and sits too low. Zero the
+   line-height and lift the baseline so Ω_b, Ω_Λ and b₁ sit correctly inside a
+   normal line of text. */
+sub, sup { font-size: 0.72em; line-height: 0; }
+sub { vertical-align: -0.28em; }
+sup { vertical-align: 0.45em; }
+
+/* Maths stays in the UI font. A serif italic was tried and looked wrong beside
+   the rest of the interface; the only thing worth overriding is subscript
+   placement. Latin variables are italic via <i>, Greek symbols upright, and
+   subscripts (b, c, Λ, 1) are descriptors so they stay upright too. */
+.sym { font-style: normal; }
+.sym i { font-style: italic; }
+
+/* ---- control layout ----
+   Two per row when the panel is wide enough, one when it is not. auto-fit does
+   this off the container's own width, so it works without media queries. */
+.controls-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  column-gap: 22px;
+}
+
+/* ---- sliders ---- */
+.slider { margin-bottom: 16px; }
+.slider.is-disabled { opacity: 0.45; }
+.slider-label {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: var(--fs-ui); margin-bottom: 7px;
+}
+.slider-name { color: var(--ink); }
+.slider-value { color: var(--ink); font-family: ui-monospace, monospace; white-space: pre; }
+.slider-hit { padding: 8px 10px; margin: -8px -10px; cursor: pointer; touch-action: none; }
+.slider-track {
+  position: relative; height: 9px; border-radius: 4.5px;
+  background: #3a3a37;
+}
+.slider-track:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
+.slider-fill {
+  position: absolute; left: 0; top: 0; height: 100%;
+  border-radius: 4.5px; pointer-events: none;
+}
+.slider-handle {
+  position: absolute; top: 50%; width: 19px; height: 19px;
+  margin-left: -9.5px; margin-top: -9.5px; border-radius: 50%;
+  background: #f4f2ef; border: 2px solid #888;
+  pointer-events: none; box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+}
+
+/* ---- readouts ---- */
+.readout {
+  display: grid; grid-template-columns: auto auto; gap: 4px 14px;
+  font-family: ui-monospace, monospace; font-size: 12px;
+  border-top: 1px solid var(--grid); padding-top: 12px; margin-top: 4px;
+}
+.readout dt { color: var(--ink-muted); margin: 0; }
+.readout dd { margin: 0; text-align: right; }
+
+/* ---- energy content bar ---- */
+.ebar { margin-bottom: 18px; }
+.ebar-title { font-size: var(--fs-ui); color: var(--ink); margin-bottom: 8px; }
+.ebar-bar {
+  position: relative; width: 100%; border-radius: 5px;
+  overflow: visible; touch-action: none; background: #3a3a37; cursor: pointer;
+}
+.ebar-seg {
+  position: absolute; top: 0; height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 1px; overflow: hidden; white-space: nowrap;
+  border-radius: 3px;
+}
+.ebar-seg:first-child { border-radius: 5px 3px 3px 5px; }
+.ebar-seg:nth-child(3) { border-radius: 3px 5px 5px 3px; }
+.ebar-seg-sym { font: 600 var(--fs-sym) system-ui, sans-serif; }
+.ebar-seg-val { font: 11px ui-monospace, monospace; opacity: 0.88; }
+.ebar-div {
+  position: absolute; top: -5px; height: calc(100% + 10px); width: 18px;
+  margin-left: -9px; cursor: ew-resize;
+  display: flex; align-items: center; justify-content: center;
+}
+.ebar-div:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 3px; }
+.ebar-grip {
+  width: 6px; height: 100%; border-radius: 3px;
+  background: #f4f2ef; box-shadow: 0 0 0 1px rgba(0,0,0,0.45), 0 1px 4px rgba(0,0,0,0.5);
+}
+.ebar.is-dragging .ebar-grip { background: #fff; }
+
+.ebar-legend { margin-top: 10px; }
+.ebar-legend.is-rows { display: grid; gap: 4px; }
+.ebar-legend.is-rows .ebar-key {
+  display: grid; grid-template-columns: 11px 1fr auto; gap: 10px; align-items: baseline;
+}
+.ebar-legend.is-inline { display: flex; gap: 14px; flex-wrap: wrap; }
+.ebar-legend.is-inline .ebar-key { display: flex; gap: 5px; align-items: center; }
+
+.ebar-key { font-size: var(--fs-ui); color: var(--ink); }
+.ebar-key i { width: 11px; height: 11px; border-radius: 2px; display: inline-block;
+              position: relative; top: 1px; }
+.ebar-key-val { font-family: ui-monospace, monospace; color: var(--ink);
+                text-align: right; white-space: pre; }
+
+/* ---- power spectrum panel ---- */
+.pk-head {
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline;
+  gap: 4px 16px; margin-bottom: 4px;
+}
+.pk-title { font-size: var(--fs-ui); color: var(--ink); }
+.pk-legend { display: flex; gap: 16px; font-size: var(--fs-small); color: var(--ink); }
+.pk-key { display: inline-flex; align-items: center; gap: 7px; }
+/* line keys mirror the marks: solid for the simulation, dashed for the observation */
+.pk-line { display: inline-block; width: 20px; height: 2px; border-radius: 1px; background: var(--pk-sim); }
+.pk-line.is-obs { background: repeating-linear-gradient(90deg, var(--pk-obs) 0 6px, transparent 6px 11px); }
+.pk-body { position: relative; }
+.pk-canvas { display: block; width: 100%; height: 320px; font-size: var(--fs-small); }
+/* Clickable axis labels, as on hollved's density chart: chart ink at rest,
+   full white on hover, and the ‹ › in the text says they switch something. */
+.pk-axis {
+  position: absolute; padding: 0; border: 0; background: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; white-space: nowrap;
+  font: var(--fs-ui) ui-monospace, 'Roboto Mono', Consolas, monospace;
+  color: rgba(255, 255, 255, 0.60); user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.pk-axis.is-y { transform: rotate(-90deg); }
+@media (hover: hover) { .pk-axis:hover { color: rgba(255, 255, 255, 0.99); } }
+.pk-axis:focus-visible { outline: 1px solid rgba(255, 255, 255, 0.6); outline-offset: 1px; border-radius: 3px; }
+.pk-tip {
+  position: absolute; pointer-events: none; display: grid; gap: 3px;
+  padding: 7px 10px; border-radius: 6px; white-space: nowrap;
+  background: rgba(17, 17, 16, 0.95); border: 1px solid #3a3a37;
+  font-size: 12px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+.pk-tip[hidden] { display: none; }
+.pk-tip-row { display: flex; align-items: center; gap: 7px; }
+.pk-tip-row .pk-line { width: 14px; }
+.pk-tip b { font: 600 12px ui-monospace, monospace; color: var(--ink); }
+.pk-tip span { color: var(--ink-muted); }
+
+/* ---- footer, as on hollved ---- */
+/* hollved's footer size, a shade fainter; kept tight so the map gets the height */
+.app-footer {
+  margin: 10px 0 0; font-size: 12px; line-height: 1.3; text-align: center;
+  color: rgba(255, 255, 255, 0.45);
+}
+.app-footer a { color: rgba(120, 180, 255, 0.50); text-decoration: none; }
+.app-footer a:hover { color: rgba(120, 180, 255, 1); text-decoration: underline; }

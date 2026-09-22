@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lscursor — energy bar variants</title>
+<link rel="icon" href="data:,"><link rel="stylesheet" href="../style.css">
+<style>
+  body { padding: 24px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 340px); gap: 26px; }
+  .cell { background: var(--surface-2); border-radius: 8px; padding: 14px; }
+  .cell.wide { grid-column: span 3; }
+  .cell h3 { font-size: 11px; color: var(--ink-muted); margin: 0 0 10px; font-weight: 500;
+             text-transform: uppercase; letter-spacing: 0.06em; }
+  .colhead { font-size: 12px; color: var(--ink); margin: 26px 0 8px; font-weight: 600; }
+  .note { font-size: 11px; color: var(--ink-muted); margin-top: 8px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<h1>lscursor — energy content bar</h1>
+<p class="sub">One bar, two dividers. The constraint is structural, so nothing gets
+re-projected. Dragging the right divider cannot move Ω<sub>b</sub> at all.
+Every bar below is live — drag them.</p>
+<div id="out"></div>
+
+<script type="module">
+import { EnergyBar } from '../src/ui/energybar.js';
+import { COLOURS } from '../src/ui/sliders.js';
+
+const names = { Omega_b: 'Ordinary matter', Omega_c: 'Dark matter', Omega_L: 'Dark energy' };
+const symbols = { Omega_b: 'Ω_b', Omega_c: 'Ω_c', Omega_L: 'Ω_Λ' };
+
+const settings = [
+  ['fiducial (Ω_b = 0.049 — the hard case)', { Omega_b: 0.049, Omega_c: 0.261, Omega_L: 0.690 }],
+  ['balanced thirds', { Omega_b: 0.333, Omega_c: 0.333, Omega_L: 0.334 }],
+  ['baryon-heavy', { Omega_b: 0.60, Omega_c: 0.25, Omega_L: 0.15 }],
+];
+
+const variants = [
+  ['A — labels inside, legend rows', { variant: 'inside', legend: 'rows' }],
+  ['B — values inside, legend rows', { variant: 'values', legend: 'rows' }],
+  ['C — bare bar, legend rows', { variant: 'bare', legend: 'rows' }],
+  ['D — labels inside, inline legend', { variant: 'inside', legend: 'inline' }],
+];
+
+const out = document.getElementById('out');
+for (const [vlabel, vopts] of variants) {
+  const h = document.createElement('div');
+  h.className = 'colhead'; h.textContent = vlabel;
+  out.appendChild(h);
+  const grid = document.createElement('div');
+  grid.className = 'grid';
+  out.appendChild(grid);
+  for (const [slabel, values] of settings) {
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    const t = document.createElement('h3'); t.textContent = slabel;
+    cell.appendChild(t);
+    grid.appendChild(cell);
+    new EnergyBar(cell, {
+      ...vopts, colours: COLOURS, names, symbols, values,
+      onChange: () => {},
+    });
+  }
+}
+
+// a wider panel, to see what extra room buys
+const h2 = document.createElement('div');
+h2.className = 'colhead'; h2.textContent = 'A at a 700 px panel width (how much room would fix Ω_b?)';
+out.appendChild(h2);
+const wide = document.createElement('div');
+wide.className = 'cell wide'; wide.style.width = '700px';
+out.appendChild(wide);
+new EnergyBar(wide, {
+  variant: 'inside', legend: 'rows', colours: COLOURS, names, symbols,
+  values: { Omega_b: 0.049, Omega_c: 0.261, Omega_L: 0.690 }, onChange: () => {},
+});
+const n = document.createElement('p');
+n.className = 'note';
+n.textContent = 'Even at 700 px, Ω_b occupies 34 px — still not enough for a label. '
+  + 'Ω_b is physically small, so no realistic panel width makes an inside label reliable for it.';
+wide.appendChild(n);
+
+window.__done = true;
+</script>
+</body>
+</html>
