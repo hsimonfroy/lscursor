@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lscursor — stats panel options</title>
+<link rel="icon" href="data:,"><link rel="stylesheet" href="../style.css">
+<style>
+  body { padding: 16px 20px 60px; }
+  h2 { font-size: 15px; margin: 26px 0 4px; }
+  .note { font-size: 13px; color: var(--ink-muted); max-width: 78ch; margin: 0 0 12px; }
+  .three { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 18px; }
+  .opt > h3 { font-size: 13px; color: var(--ink-muted); font-weight: 600; margin: 0 0 8px; }
+  .pk-body { height: 300px; }
+  .pk-canvas { height: 100%; }   /* the panels here size the body, not the canvas */
+  /* phone mock-ups */
+  .phones { display: flex; gap: 26px; flex-wrap: wrap; }
+  .phone { width: 390px; position: relative; }
+  .phone-body { background: #000; padding: 12px 10px; display: grid; gap: 12px;
+                border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; }
+  .phone .panel { padding: 12px; }
+  .phone .pk-body { height: 240px; }
+  .mock-field { aspect-ratio: 1; background:
+      radial-gradient(circle at 30% 70%, #3b1050 0 12%, #17021f 45%, #000 80%); border-radius: 0;
+      display: flex; align-items: flex-end; justify-content: center; color: #6a6a68; font-size: 12px;
+      padding-bottom: 6px; }
+  .fold { position: absolute; left: -6px; right: -6px; border-top: 1px dashed #d0a24a;
+          font-size: 11px; color: #d0a24a; padding-top: 2px; pointer-events: none; }
+  .mock-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .mock-title { font-size: var(--fs-ui); }
+  .mock-btns { display: flex; gap: 6px; }
+  .icon-btn { width: 30px; height: 30px; padding: 0; display: flex; align-items: center;
+              justify-content: center; cursor: pointer; border-radius: 50%;
+              border: 1px solid #56554f; background: transparent; color: #bab8b3; }
+  .icon-btn.is-on { color: #fff; border-color: #8a8886; background: #2f2f2c; }
+  .mock-rows { display: grid; gap: 8px; margin-top: 10px; }
+  .mock-row { height: 9px; border-radius: 5px; background: #3a3a37; }
+  .mock-row.a { background: linear-gradient(90deg, #9b7ede 0 45%, #3a3a37 45%); }
+  .mock-row.b { background: linear-gradient(90deg, #d9709a 0 62%, #3a3a37 62%); }
+  .mock-bar { height: 26px; border-radius: 5px; display: flex; overflow: hidden; }
+  .mock-bar i { display: block; }
+  .collapse { overflow: hidden; }
+  .collapse[hidden] { display: none; }
+</style>
+</head>
+<body>
+<h1>Stats panel — selector and mobile layout</h1>
+<p class="note">Same data everywhere: linear theory for the fiducial cosmology (observation) and a
+detuned one (simulation, Ω<sub>c</sub> = 0.32, b₁ = 1.6). Tabs switch the statistic; the axis
+labels marked ‹ › switch what is plotted on that axis.</p>
+
+<h2>A — statistic selector</h2>
+<p class="note">Three ways to switch between the power spectrum and the 2PCF. All are keyboard
+reachable and take the same room.</p>
+<div class="three">
+  <div class="opt"><h3>A1 · tabs (underline)</h3><div class="panel" id="sel-tabs"></div></div>
+  <div class="opt"><h3>A2 · segmented pill</h3><div class="panel" id="sel-seg"></div></div>
+  <div class="opt"><h3>A3 · plain menu</h3><div class="panel" id="sel-menu"></div></div>
+</div>
+
+<h2>B — where the panel goes on a phone</h2>
+<p class="note">Each column is 390 px wide, the dashed line is the bottom of an iPhone-14 screen
+(844 px). B1 is what the app does today: the stats sit below the map, so they are never on screen
+together with the sliders.</p>
+<div class="phones" id="phones"></div>
+
+<script type="module">
+import { StatsPlot } from '../src/ui/statsplot.js';
+import { xiTransform } from '../src/cosmo/xi.js';
+import { linearPower } from '../src/cosmo/power.js';
+import { derive, FIDUCIAL, GEOM, createState } from '../src/state.js';
+
+// ---- the curves, straight from the app's own physics ----
+const kMax = (Math.PI * GEOM.nXY) / GEOM.boxXY, N = 600, kMin = 1e-3;
+const pkK = new Float64Array(N);
+for (let i = 0; i < N; i++) pkK[i] = kMin * (kMax / kMin) ** (i / (N - 1));
+const xiT = xiTransform();
+const kaiser = (b, f) => b * b + (2 / 3) * b * f + (f * f) / 5;
+const st = createState();
+const curvesFor = (Omega_c, b1, f) => {
+  const d = derive({ Omega_b: FIDUCIAL.Omega_b, Omega_c });
+  const K = kaiser(b1, f);
+  const P = Array.from(linearPower(pkK, d.cosmo, d.A, new Float64Array(N)), (p) => p * K);
+  const Pxi = linearPower(xiT.k, d.cosmo, d.A, new Float64Array(xiT.k.length));
+  const xi = Array.from(xiT.xi(Pxi), (v) => v * K);
+  return { P, xi };
+};
+const obs = curvesFor(FIDUCIAL.Omega_c, 2.0, st.f);
+const sim = curvesFor(0.32, 1.6, st.f);
+const feed = (p) => {
+  p.setData('pk', { x: pkK, sim: sim.P, obs: obs.P });
+  p.setData('xi', { x: xiT.s, sim: sim.xi, obs: obs.xi });
+};
+
+// ---- A: selector styles ----
+for (const [id, selector] of [['sel-tabs', 'tabs'], ['sel-seg', 'segmented'], ['sel-menu', 'menu']]) {
+  feed(new StatsPlot(document.getElementById(id), { selector, note: 'Linear theory: Kaiser monopole at z = 0' }));
+}
+
+// ---- B: phone layouts ----
+const SUMMARY_ICON = `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
+    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M4 5v14h16"/><path d="M6.5 15.5c2.5 0 2.8-7.5 5.5-7.5s3.3 7.5 6 7.5"/></svg>`;
+const RESET_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+    stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M20.5 14.5a8.5 8.5 0 1 1-2.2-8.6L21.5 9"/><path d="M21.5 3.5V9H16"/></svg>`;
+
+const controlsMock = (extraBtn = '') => `
+  <div class="panel">
+    <div class="mock-head">
+      <span class="mock-title">Energy content</span>
+      <span class="mock-btns">${extraBtn}<button class="icon-btn" type="button">${RESET_ICON}</button></span>
+    </div>
+    <div class="mock-rows">
+      <div class="mock-bar"><i style="background:#f89406;width:5%"></i><i style="background:#049cdb;width:26%"></i><i style="background:#46a546;width:69%"></i></div>
+      <div class="mock-row a"></div>
+      <div class="mock-row b"></div>
+    </div>
+  </div>`;
+const fieldMock = '<div class="mock-field">map (1:1)</div>';
+
+const LAYOUTS = [
+  { id: 'B1', title: 'B1 · as now: map, then stats below',
+    html: `${controlsMock()}${fieldMock}<div class="panel" data-plot></div>` },
+  { id: 'B2', title: 'B2 · stats above the map, collapsed by default',
+    collapsible: true,
+    html: `${controlsMock(`<button class="icon-btn is-toggle" type="button" title="Show the summary statistics">${SUMMARY_ICON}</button>`)}
+           <div class="panel collapse" data-plot hidden></div>${fieldMock}` },
+  { id: 'B3', title: 'B3 · short stats strip between sliders and map',
+    short: true,
+    html: `${controlsMock()}<div class="panel" data-plot></div>${fieldMock}` },
+];
+
+const phones = document.getElementById('phones');
+for (const L of LAYOUTS) {
+  const col = document.createElement('div');
+  col.className = 'phone';
+  col.innerHTML = `<h3 style="font-size:13px;color:var(--ink-muted);margin:0 0 8px">${L.title}</h3>
+                   <div class="phone-body">${L.html}</div>
+                   <div class="fold" style="top:844px">iPhone 14 fold — 844 px</div>`;
+  phones.append(col);
+  const holder = col.querySelector('[data-plot]');
+  const plot = new StatsPlot(holder, { note: 'Linear theory: Kaiser monopole at z = 0' });
+  if (L.short) holder.querySelector('.pk-body').style.height = '150px';
+  feed(plot);
+  if (L.collapsible) {
+    const btn = col.querySelector('.is-toggle');
+    btn.addEventListener('click', () => {
+      const open = holder.hasAttribute('hidden');
+      holder.toggleAttribute('hidden', !open);
+      btn.classList.toggle('is-on', open);
+      if (open) plot.draw();
+    });
+  }
+}
+window.__done = true;
+</script>
+</body>
+</html>

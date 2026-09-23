@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lscursor — field look</title>
+<link rel="icon" href="data:,"><link rel="stylesheet" href="../style.css">
+<style>
+  body { padding: 16px 20px 40px; }
+  h1 { margin-bottom: 4px; }
+  .wrap { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(320px, 620px);
+          gap: 22px; align-items: start; }
+  .stage { position: relative; width: 100%; aspect-ratio: 1; background: #000; overflow: hidden; }
+  .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .cell { background: var(--surface-2); border: 1px solid rgba(255,255,255,0.07);
+          border-radius: 10px; padding: 8px; cursor: pointer; }
+  .cell.is-on { border-color: #8a8886; }
+  .cell canvas { width: 100%; aspect-ratio: 1; display: block; border-radius: 6px; background: #000; }
+  .cell b { display: block; font-size: 13px; margin: 6px 0 1px; }
+  .cell span { font-size: 11px; color: var(--ink-muted); font-family: ui-monospace, monospace; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: center; margin: 10px 0 14px; }
+  .row label { font-size: 13px; display: flex; gap: 8px; align-items: center; }
+  .out { font-family: ui-monospace, monospace; font-size: 12px; color: var(--ink-muted); }
+  .note { font-size: 13px; color: var(--ink-muted); max-width: 70ch; }
+</style>
+</head>
+<body>
+<h1>Field look — tone curve and colour map</h1>
+<p class="note">Same field, same seed, same clip quantiles unless stated. The tone curve is applied
+to the clipped value <span class="out">t ∈ [0,1]</span> before the colour map:
+<span class="out">t → asinh(knee·t)/asinh(knee) → t^gamma → lift + (1−lift)·t</span>.
+"median" below each thumbnail is where a typical pixel lands on the colour ramp — the app ships with
+asinh knee 2 and q = 1e-4, which puts it near 0.10; the old linear ramp sat at 0.07.</p>
+
+<div class="wrap">
+  <div>
+    <div class="stage"><canvas id="view"></canvas></div>
+    <div class="row">
+      <label>colour map
+        <select id="cmap"><option>inferno</option><option>plasma</option><option>viridis</option></select>
+      </label>
+      <label>clip quantile <input id="q" type="range" min="-5" max="-1.7" step="0.05" value="-4.3"></label>
+      <label>asinh knee <input id="knee" type="range" min="0" max="60" step="1" value="0"></label>
+      <label>gamma <input id="gamma" type="range" min="0.3" max="1" step="0.02" value="1"></label>
+      <label>lift <input id="lift" type="range" min="0" max="0.3" step="0.01" value="0"></label>
+    </div>
+    <div class="out" id="live"></div>
+  </div>
+  <div>
+    <div class="grid" id="grid"></div>
+  </div>
+</div>
+
+<script type="module">
+import { createContext } from '../src/gl/context.js';
+import { Pipeline } from '../src/sim/pipeline.js';
+import { Renderer } from '../src/sim/render.js';
+import { createState, derive, GEOM } from '../src/state.js';
+
+const SIZE = 600;
+const view = document.getElementById('view');
+view.width = view.height = SIZE;
+// preserveDrawingBuffer so each variant can be copied into a thumbnail
+const { gl, caps } = createContext(view, { preserveDrawingBuffer: true });
+if (!gl) { document.body.innerHTML = '<h1>WebGL2 unavailable</h1>'; throw new Error('no gl'); }
+
+const grid = { nx: GEOM.nXY, ny: GEOM.nXY, nz: GEOM.nZ, slabCells: GEOM.slabCells,
+               boxXY: GEOM.boxXY, boxZ: GEOM.boxXY * GEOM.nZ / GEOM.nXY };
+const pipe = new Pipeline(gl, grid);
+const payload = pipe.createPayload();
+const rend = new Renderer(gl, caps, { width: SIZE, height: SIZE, grid });
+const state = createState();
+const d = derive(state);
+pipe.run(d.cosmo, d.A, payload, { seed: 1, smoothR: 4.0 });
+rend.setCosmology(d.Omega_m);
+rend.paint(payload, { f: state.f, b1: state.b1, f0: d.f0 });   // one field, reused by every variant
+
+let current = 'inferno';
+function show(v) {
+  if (v.cmap !== current) { rend.setColormap(v.cmap); current = v.cmap; }
+  const q = rend.quantiles(v.q);
+  rend.composite(null, { ...q, wipe: 2.0, knee: v.knee, gammaT: v.gamma, lift: v.lift });
+  return q;
+}
+
+/** Where a typical pixel lands on the colour ramp, after the tone curve. */
+function medianT(v, q) {
+  const buf = rend._qbuf, n = rend.gw * rend.gh, out = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    let t = Math.min(1, Math.max(0, (buf[i * 4] - q.lo) / Math.max(q.hi - q.lo, 1e-9)));
+    if (v.knee > 0) t = Math.asinh(v.knee * t) / Math.asinh(v.knee);
+    if (v.gamma !== 1) t = t ** v.gamma;
+    out[i] = v.lift + (1 - v.lift) * t;
+  }
+  out.sort();
+  return out[n >> 1];
+}
+
+const VARIANTS = [
+  { name: 'A · as shipped', cmap: 'inferno', q: 1e-4, knee: 2, gamma: 1, lift: 0 },
+  { name: 'B · old linear', cmap: 'inferno', q: 5e-5, knee: 0, gamma: 1, lift: 0 },
+  { name: 'C · asinh 2, tighter clip', cmap: 'inferno', q: 5e-5, knee: 2, gamma: 1, lift: 0 },
+  { name: 'D · asinh 4', cmap: 'inferno', q: 1e-4, knee: 4, gamma: 1, lift: 0 },
+  { name: 'E · asinh 12', cmap: 'inferno', q: 1e-4, knee: 12, gamma: 1, lift: 0 },
+  { name: 'F · asinh 40', cmap: 'inferno', q: 1e-4, knee: 40, gamma: 1, lift: 0 },
+  { name: 'G · gamma 0.6 + lift', cmap: 'inferno', q: 5e-4, knee: 0, gamma: 0.6, lift: 0.10 },
+  { name: 'H · plasma, asinh 2', cmap: 'plasma', q: 1e-4, knee: 2, gamma: 1, lift: 0 },
+  { name: 'I · viridis, asinh 2', cmap: 'viridis', q: 1e-4, knee: 2, gamma: 1, lift: 0 },
+];
+
+const fmt = (v) => `${v.cmap} · q=${v.q} · knee=${v.knee} · gamma=${v.gamma} · lift=${v.lift}`;
+const host = document.getElementById('grid');
+const cells = VARIANTS.map((v) => {
+  const el = document.createElement('div');
+  el.className = 'cell';
+  el.innerHTML = '<canvas width="300" height="300"></canvas><b></b><span></span>';
+  el.querySelector('b').textContent = v.name;
+  el.addEventListener('click', () => { setControls(v); redraw(); });
+  host.appendChild(el);
+  return el;
+});
+
+// Render every preset once into its thumbnail.
+VARIANTS.forEach((v, i) => {
+  const q = show(v);
+  const c = cells[i].querySelector('canvas');
+  c.getContext('2d').drawImage(view, 0, 0, c.width, c.height);
+  cells[i].querySelector('span').textContent = `median ${medianT(v, q).toFixed(2)}`;
+});
+
+// ---- live controls ----
+const el = (id) => document.getElementById(id);
+const readControls = () => ({
+  cmap: el('cmap').value, q: 10 ** parseFloat(el('q').value),
+  knee: parseFloat(el('knee').value), gamma: parseFloat(el('gamma').value),
+  lift: parseFloat(el('lift').value),
+});
+function setControls(v) {
+  el('cmap').value = v.cmap; el('q').value = Math.log10(v.q);
+  el('knee').value = v.knee; el('gamma').value = v.gamma; el('lift').value = v.lift;
+}
+function redraw() {
+  const v = readControls();
+  const q = show(v);
+  el('live').textContent = `${fmt({ ...v, q: v.q.toExponential(1) })}  ·  median ${medianT(v, q).toFixed(2)}`
+    + `  ·  clip [${q.lo.toFixed(1)}, ${q.hi.toFixed(1)}]`;
+  cells.forEach((c, i) => c.classList.toggle('is-on', fmt(VARIANTS[i]) === fmt(v)));
+}
+['cmap', 'q', 'knee', 'gamma', 'lift'].forEach((id) => el(id).addEventListener('input', redraw));
+setControls(VARIANTS[0]);
+redraw();
+window.__done = true;
+window.__shot = (i) => { show(VARIANTS[i]); };
+</script>
+</body>
+</html>

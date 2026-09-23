@@ -38,7 +38,11 @@ one edge re-enters through the opposite one, with its growth and RSD evaluated
 at the periodic image that is actually on screen.
 
 The colour scale is fixed to the observation's range, so one colour means one
-weighted count per pixel on both sides of the wipe.
+weighted count per pixel on both sides of the wipe. The ends of that range are
+the 10⁻⁴ and 1 − 10⁻⁴ quantiles of the observation, and the ramp between them is
+`asinh(2t)/asinh(2)`: a linear ramp left a typical pixel at 0.07 of the colour
+map, deep in inferno's near-black end, where a dim screen shows nothing.
+`dev/looks.html` compares the alternatives side by side.
 
 `h` is held fixed. The amplitude has two modes, picked with `?norm=` in the URL:
 
@@ -54,7 +58,16 @@ Both agree at the fiducial cosmology, so the observation is identical in either.
 Ω_b and Ω_m are floored at 10⁻⁴ inside the physics (EH98 divides by both), so
 the bar can sit at exactly zero.
 
-## The power spectrum
+## The summary statistics
+
+The panel beside the map plots either the power spectrum or the two-point
+correlation function, picked from the tabs. The 2PCF is a Hankel transform of
+the same linear P(k) (`src/cosmo/xi.js`, 0.3 ms, checked to 1e-9 against a
+200k-point reference), shown as s²ξ(s) so the BAO bump near 105 Mpc/h stands up,
+or as plain ξ(s). The panel folds away at any width from the button beside
+reset; it starts open on a wide screen and closed on a narrow one, where it sits
+between the sliders and the map. `#power` or `#2pcf` in the URL opens it on that
+statistic, which makes a link shareable.
 
 The power-spectrum panel is linear theory, not a measurement: the Kaiser
 monopole (b₁² + 2b₁f/3 + f²/5) P_lin(k) at z = 0, from k = 10⁻³ up to the box's

@@ -5,10 +5,11 @@
 
 export const TIER = { FULL: 'full', DRAFT_ONLY: 'draft-only', UNSUPPORTED: 'unsupported' };
 
-export function createContext(canvas) {
+export function createContext(canvas, opts = {}) {
   const gl = canvas.getContext('webgl2', {
     alpha: false, antialias: false, depth: false, stencil: false,
     preserveDrawingBuffer: false, powerPreference: 'high-performance',
+    ...opts,   // dev pages set preserveDrawingBuffer to copy frames out
   });
   if (!gl) return { gl: null, caps: { tier: TIER.UNSUPPORTED, reason: 'no WebGL2' } };
 
