@@ -67,7 +67,7 @@ the same linear P(k) (`src/cosmo/xi.js`, 0.3 ms, checked to 1e-9 against a
 or as plain ξ(s). The panel folds away at any width from the button beside
 reset; it starts open on a wide screen and closed on a narrow one, where it sits
 between the sliders and the map. `#power` or `#2pcf` in the URL opens it on that
-statistic, which makes a link shareable.
+statistic and `#none` closes it at any width, so a link carries the state.
 
 The power-spectrum panel is linear theory, not a measurement: the Kaiser
 monopole (b₁² + 2b₁f/3 + f²/5) P_lin(k) at z = 0, from k = 10⁻³ up to the box's
