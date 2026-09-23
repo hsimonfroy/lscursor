@@ -23,8 +23,12 @@
   @supports (height: 100dvh) {
     .wrap { --stage: clamp(420px, min(100dvh - 158px, 100vw - 370px), 760px); }
   }
-  .panel-controls { grid-area: controls; position: relative; padding: 14px 16px 6px; }
-  .panel-controls .ebar-title { padding-right: 40px; margin-bottom: 10px; }
+  /* The top padding is deliberately generous: it pushes "Energy content" clear of
+     the frame's edge so it reads as the bar's title rather than the panel's, and
+     it puts air between the corner buttons and the bar. */
+  .panel-controls { grid-area: controls; position: relative; padding: 20px 16px 6px; }
+  .panel-controls .ebar-title { margin-bottom: 10px; }   /* as before, unchanged */
+  .panel-btns { position: absolute; top: 4px; right: 4px; display: flex; gap: 6px; }
   .panel-controls .slider { margin-bottom: 12px; }
   /* The plot keeps at most a 4:3 aspect (cqw = the panel's width) and gives up
      height, never width, when the column is short. */
@@ -34,12 +38,12 @@
   .panel-pk .pk-canvas { position: absolute; inset: 0; height: 100%; }
   /* container-type lets the map's own labels size themselves off its width (cqw) */
   .stage { grid-area: stage; position: relative; width: var(--stage); height: var(--stage);
-           container-type: inline-size; border-radius: 14px; overflow: hidden; background: #000;
+           container-type: inline-size; overflow: hidden; background: #000;
            touch-action: none; cursor: ew-resize; user-select: none; }
   .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   #overlay { font-size: clamp(9.5px, 7px + 0.8cqw, 13px); }   /* read by drawOverlay() */
-  /* inset just enough that the 14 px rounded corner does not clip the dome */
-  #obs { position: absolute; left: 6px; bottom: 5px; height: clamp(34px, 7.6cqw, 58px);
+  /* square frame, so the observer sits exactly in the corner */
+  #obs { position: absolute; left: 0; bottom: 0; height: clamp(34px, 7.6cqw, 58px);
          pointer-events: none; filter: drop-shadow(0 2px 5px rgba(0,0,0,0.85)); }
   /* Wipe: a hairline plus two small arrowheads, no button - it should read as a
      seam in the image, not as a control sitting on top of it. */
@@ -55,16 +59,21 @@
          letter-spacing: 0.08em; text-transform: uppercase; color: #fff; pointer-events: none;
          text-shadow: 0 1px 4px rgba(0,0,0,0.95); }
   .tag-sim { left: 12px; } .tag-obs { right: 12px; }
-  /* tucked into the corner, the same inset from the top and the right edge */
-  .panel-reset { position: absolute; top: 6px; right: 6px; width: 30px; height: 30px; padding: 0;
-                 display: flex; align-items: center; justify-content: center; cursor: pointer;
-                 border-radius: 50%; border: 1px solid #3a3a37; background: transparent;
-                 color: var(--ink-muted); }
-  .panel-reset:hover { color: var(--ink); background: #242422; border-color: #55544f; }
-  .panel-reset:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .panel-btns button { width: 32px; height: 32px; padding: 0; display: flex; align-items: center;
+                 justify-content: center; cursor: pointer; border-radius: 50%;
+                 border: 1px solid #56554f; background: transparent; color: #bab8b3; }
+  .panel-btns button:hover { color: var(--ink); background: #2f2f2c; border-color: #7a7872; }
+  .panel-btns button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .panel-btns button.is-on { color: var(--ink); border-color: #8a8886; background: #2f2f2c; }
+  /* The stats panel folds away at any width; only the default differs (open on a
+     wide screen, closed on a narrow one), so the toggle is always there. */
+  .panel-pk.is-collapsed { display: none; }
+  /* Narrow: one column, and the stats sit between the sliders and the map so the
+     two can be read together - closed until asked for, since the map is what the
+     page is about. */
   @media (max-width: 860px) {
     .wrap { height: auto; grid-template-columns: minmax(0, 760px); grid-template-rows: none;
-            grid-template-areas: "controls" "stage" "pk"; }
+            grid-template-areas: "controls" "pk" "stage"; }
     .stage { width: 100%; height: auto; aspect-ratio: 1; }
   }
 </style>
@@ -75,13 +84,22 @@
 
 <div class="wrap">
   <div class="panel panel-controls">
-    <button class="panel-reset" id="reset" type="button" title="Reset to the observation's parameters"
-            aria-label="Reset parameters">
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
-           stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M20.5 14.5a8.5 8.5 0 1 1-2.2-8.6L21.5 9"/><path d="M21.5 3.5V9H16"/>
-      </svg>
-    </button>
+    <div class="panel-btns">
+      <button id="statsToggle" type="button" title="Show the summary statistics"
+              aria-expanded="false" aria-controls="pk" aria-label="Show the summary statistics">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 5v14h16"/><path d="M6.5 15.5c2.5 0 2.8-7.5 5.5-7.5s3.3 7.5 6 7.5"/>
+        </svg>
+      </button>
+      <button id="reset" type="button" title="Reset to the observation's parameters"
+              aria-label="Reset parameters">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+             stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20.5 14.5a8.5 8.5 0 1 1-2.2-8.6L21.5 9"/><path d="M21.5 3.5V9H16"/>
+        </svg>
+      </button>
+    </div>
     <div id="controls"></div>
   </div>
   <div class="stage" id="stage">
@@ -112,9 +130,10 @@ import { Renderer } from './src/sim/render.js';
 import { createState, setEnergy, derive, FIDUCIAL, GEOM } from './src/state.js';
 import { Slider, COLOURS } from './src/ui/sliders.js';
 import { EnergyBar } from './src/ui/energybar.js';
-import { PkPlot } from './src/ui/pkplot.js';
+import { StatsPlot } from './src/ui/statsplot.js';
 import { pkEstimator } from './src/sim/pk.js';
 import { linearPower } from './src/cosmo/power.js';
+import { xiTransform } from './src/cosmo/xi.js';
 
 const DISPLAY = 760;
 const view = document.getElementById('view');
@@ -141,6 +160,12 @@ let clip = null, lastMs = 0, lastKind = '', dirtyCosmo = true, queued = false;
 // to the top colour whatever b1 is, so less contrast shows up as the rest of
 // the image getting BRIGHTER - that was tried and dropped.)
 let truthClip = null;
+// Tone curve for the map. The linear ramp left a typical pixel at 0.07 of the
+// colour map, i.e. in inferno's near-black end, which disappears on a dim
+// screen. asinh stretches the bottom and compresses the top; the wider clip
+// (1e-4 per tail instead of 5e-5) lowers the top end a little as well. Even at
+// b1 = 2.5 with Omega_c = 0.35 that saturates only 0.05% of pixels.
+const TONE = { knee: 2.0, q: 1e-4 };
 const syncGPU = () => { const px = new Uint8Array(4); gl.bindFramebuffer(gl.FRAMEBUFFER, null);
                         gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); };
 
@@ -159,16 +184,16 @@ function draw() {
   }
   rend.paint(payload, { f: state.f, b1: state.b1, f0: d.f0 });
   clip = truthClip;
-  rend.composite(null, { ...clip, wipe: state.wipe });
+  rend.composite(null, { ...clip, wipe: state.wipe, knee: TONE.knee });
   syncGPU();   // the GPU runs asynchronously; without this lastMs is queueing time
   lastMs = performance.now() - t0;
   lastKind = didFFT ? 'cosmology (FFT + paint)' : 'paint only';
   drawOverlay(d);
   const key = `${state.Omega_b},${state.Omega_c},${state.f},${state.b1}`;
-  if (key !== pkKey) { pkKey = key; pkPlot.setSimulation(galaxyPk(d, state.b1, state.f)); }
+  if (key !== pkKey) { pkKey = key; setCurves('sim', d, state.b1, state.f); }
 }
 
-// ---- power spectrum: linear theory, Kaiser monopole at z = 0 ----
+// ---- summary statistics: linear theory, Kaiser monopole at z = 0 ----
 // Theory rather than a measurement of the map. The box holds too few modes at
 // BAO scales for ~5% wiggles to survive cosmic variance and the slab projection,
 // whereas the theory curve is smooth, exact and costs well under a millisecond,
@@ -184,14 +209,36 @@ function plin(d) {
   if (!P) { P = linearPower(pkK, d.cosmo, d.A, new Float64Array(PK_N)); plinMemo.set(d, P); }
   return P;
 }
-// Kaiser (1987), angle-averaged: <(b + f mu^2)^2> = b^2 + 2bf/3 + f^2/5
+// Kaiser (1987), angle-averaged: <(b + f mu^2)^2> = b^2 + 2bf/3 + f^2/5. The
+// same factor multiplies the correlation function, so one transform per
+// cosmology is enough and b1/f only rescale it.
 const kaiser = (b, f) => b * b + (2 / 3) * b * f + (f * f) / 5;
-const galaxyPk = (d, b1, f) => {
+const xiT = xiTransform();
+const xiMemo = new WeakMap();
+function xiLin(d) {
+  let X = xiMemo.get(d);
+  if (!X) {
+    const P = linearPower(xiT.k, d.cosmo, d.A, new Float64Array(xiT.k.length));
+    X = Float64Array.from(xiT.xi(P));   // xi() reuses its output buffer, so copy
+    xiMemo.set(d, X);
+  }
+  return X;
+}
+const statsPanel = document.getElementById('pk');
+const statsPlot = new StatsPlot(statsPanel, { selector: 'segmented',
+                                              note: 'Linear theory: Kaiser monopole at z = 0',
+                                              onStat: () => writeHash() });
+const curves = { pk: {}, xi: {} };
+/** Fill one side ('sim' or 'obs') of both statistics. */
+function setCurves(side, d, b1, f) {
   const K = kaiser(b1, f);
-  return { k: pkK, P: Array.from(plin(d), (p) => p * K) };
-};
-const pkPlot = new PkPlot(document.getElementById('pk'),
-                          { note: 'Linear theory: Kaiser monopole at z = 0' });
+  curves.pk[side] = Array.from(plin(d), (p) => p * K);
+  curves.xi[side] = Array.from(xiLin(d), (v) => v * K);
+  if (curves.pk.sim && curves.pk.obs) {
+    statsPlot.setData('pk', { x: pkK, sim: curves.pk.sim, obs: curves.pk.obs });
+    statsPlot.setData('xi', { x: xiT.s, sim: curves.xi.sim, obs: curves.xi.obs });
+  }
+}
 let pkKey = '';
 const schedule = () => { if (!queued) { queued = true; requestAnimationFrame(() => { queued = false; draw(); }); } };
 
@@ -279,6 +326,37 @@ document.getElementById('reset').addEventListener('click', () => {
   dirtyCosmo = true; schedule();
 });
 
+// ---- folding the stats panel away ----
+// Open by default on a wide screen, closed on a narrow one where it would push
+// the map off screen. The URL hash carries the state so a link can share it:
+// #power or #2pcf opens the panel on that statistic, no hash leaves the default.
+const toggle = document.getElementById('statsToggle');
+const NARROW = window.matchMedia('(max-width: 860px)');
+const HASH = { pk: '#power', xi: '#2pcf' };
+let collapsed = true;
+function setCollapsed(c) {
+  collapsed = c;
+  statsPanel.classList.toggle('is-collapsed', c);
+  toggle.classList.toggle('is-on', !c);
+  toggle.setAttribute('aria-expanded', String(!c));
+  toggle.title = c ? 'Show the summary statistics' : 'Hide the summary statistics';
+  if (!c) statsPlot.draw();     // it was display:none, so it had no size to draw into
+}
+function writeHash() {
+  const want = collapsed ? '' : HASH[statsPlot.stat];
+  if ((location.hash || '') !== want) {
+    history.replaceState(null, '', want || location.pathname + location.search);
+  }
+}
+function readHash() {
+  const h = location.hash.slice(1).toLowerCase();
+  const stat = h === '2pcf' ? 'xi' : h === 'power' ? 'pk' : null;
+  if (stat) statsPlot.setStat(stat);
+  setCollapsed(stat ? false : NARROW.matches);
+}
+toggle.addEventListener('click', () => { setCollapsed(!collapsed); writeHash(); });
+window.addEventListener('hashchange', readHash);
+
 // ---- wipe ----
 const stage = document.getElementById('stage');
 const line = document.getElementById('wipeLine'), grip = document.getElementById('wipeGrip');
@@ -304,11 +382,12 @@ const truthParams = { ...FIDUCIAL, f: state.f, b1: state.b1 };
   const d = derive({ ...truthParams, wipe: 0 });
   pipe.run(d.cosmo, d.A, payload, { seed: 1, smoothR: 4.0 });
   rend.setCosmology(d.Omega_m);
-  truthClip = rend.bakeTruth(payload, { f: truthParams.f, b1: truthParams.b1, f0: d.f0 });
-  pkPlot.setObservation(galaxyPk(d, truthParams.b1, truthParams.f));
+  truthClip = rend.bakeTruth(payload, { f: truthParams.f, b1: truthParams.b1, f0: d.f0 }, TONE);
+  setCurves('obs', d, truthParams.b1, truthParams.f);
 }
 dirtyCosmo = true;
 draw();
+readHash();
 // The map is sized from the viewport, so the arcs are redrawn whenever it resizes.
 new ResizeObserver(() => drawOverlay(derive(state))).observe(stage);
 window.__done = true;
@@ -331,7 +410,7 @@ window.__profile = () => {
   sync(); t = performance.now();
   const d = derive(state);                                            lap('derive (JS)');
   rend.paint(payload, { f: state.f, b1: state.b1, f0: d.f0 });        lap('paint (GPU points)');
-  rend.composite(null, { ...truthClip, wipe: state.wipe });           lap('composite (GPU)');
+  rend.composite(null, { ...truthClip, wipe: state.wipe, knee: TONE.knee });  lap('composite (GPU)');
   drawOverlay(d);                                                     lap('overlay (2D canvas)');
   return out;
 };
@@ -349,7 +428,7 @@ window.__accum = () => { rend.quantiles(); const n = rend.gw * rend.gh, out = ne
   for (let i = 0; i < n; i++) out[i] = rend._qbuf[i * 4]; return out; };
 // The two spectra currently plotted, and the P(k) actually MEASURED from the
 // painted map (2-D, CPU FFT, ~5 ms) - not shown in the app, kept for checks.
-window.__pk = () => ({ sim: pkPlot.sim, obs: pkPlot.obs });
+window.__pk = () => ({ ...curves, stat: statsPlot.stat });
 let pkEst = null;
 window.__measurePk = () => (pkEst ??= pkEstimator(grid.nx, grid.boxXY))(rend.readAccum(), 4);
 window.__stats = () => ({ lastMs, clip, f: state.f, b1: state.b1, wipe: state.wipe,

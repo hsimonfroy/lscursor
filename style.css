@@ -10,7 +10,7 @@
 
 :root {
   --surface: #000000;   /* page: pure black, as hollved */
-  --surface-2: #1a1a19;
+  --surface-2: #1c1c1a;   /* panel: a touch above the page, the hairline does the rest */
   --ink: #e8e6e3;
   --ink-muted: #8a8886;
   --grid: #2a2a28;
@@ -52,8 +52,10 @@ h1 { font-size: 18px; font-weight: 600; margin: 0 0 2px; }
   text-align: center; margin: 0 0 22px;
 }
 
-/* 14 px corners: close to the round reset button tucked into the controls panel */
-.panel { background: var(--surface-2); border-radius: 14px; padding: 16px; }
+/* 14 px corners: close to the round reset button tucked into the controls panel.
+   The hairline keeps the box visible on low-contrast screens. */
+.panel { background: var(--surface-2); border: 1px solid rgba(255, 255, 255, 0.07);
+         border-radius: 14px; padding: 16px; }
 
 /* ---- maths ----
    Default <sub> rendering drags the line box around and sits too low. Zero the
@@ -162,7 +164,36 @@ sup { vertical-align: 0.45em; }
   display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline;
   gap: 4px 16px; margin-bottom: 4px;
 }
+/* Statistic picker. Three styles so the layout can be judged side by side in
+   dev/stats.html; the app uses .sel-tabs. */
 .pk-title { font-size: var(--fs-ui); color: var(--ink); }
+.pk-tabs { display: flex; }
+.pk-tab {
+  appearance: none; background: none; border: 0; cursor: pointer; position: relative;
+  font-size: var(--fs-ui); font-family: inherit; color: var(--ink-muted);
+  padding: 2px 2px 6px; -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) { .pk-tab:hover { color: var(--ink); } }
+.pk-tab:focus-visible { outline: 1px solid var(--ink); outline-offset: 2px; border-radius: 3px; }
+/* tabs: the active one is underlined */
+.sel-tabs .pk-tabs { gap: 16px; }
+.sel-tabs .pk-tab.is-on { color: var(--ink); }
+.sel-tabs .pk-tab.is-on::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+  background: var(--ink); border-radius: 1px;
+}
+/* segmented: a pill group, the active one filled */
+.sel-segmented .pk-tabs {
+  gap: 0; background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 999px; padding: 2px;
+}
+.sel-segmented .pk-tab { padding: 3px 12px; border-radius: 999px; }
+.sel-segmented .pk-tab.is-on { background: #3d3d39; color: var(--ink); }
+/* menu: a plain select */
+.pk-menu {
+  font: var(--fs-ui) inherit; color: var(--ink); background: #2c2c29;
+  border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px; padding: 2px 6px;
+}
 .pk-legend { display: flex; gap: 16px; font-size: var(--fs-small); color: var(--ink); }
 .pk-key { display: inline-flex; align-items: center; gap: 7px; }
 /* line keys mirror the marks: solid for the simulation, dashed for the observation */
@@ -179,7 +210,9 @@ sup { vertical-align: 0.45em; }
   color: rgba(255, 255, 255, 0.60); user-select: none; -webkit-tap-highlight-color: transparent;
 }
 .pk-axis.is-y { transform: rotate(-90deg); }
-@media (hover: hover) { .pk-axis:hover { color: rgba(255, 255, 255, 0.99); } }
+/* a label that does not switch anything (the 2PCF's s axis) */
+.pk-axis:disabled { cursor: default; color: rgba(255, 255, 255, 0.60); }
+@media (hover: hover) { .pk-axis:not(:disabled):hover { color: rgba(255, 255, 255, 0.99); } }
 .pk-axis:focus-visible { outline: 1px solid rgba(255, 255, 255, 0.6); outline-offset: 1px; border-radius: 3px; }
 .pk-tip {
   position: absolute; pointer-events: none; display: grid; gap: 3px;

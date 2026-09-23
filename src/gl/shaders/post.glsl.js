@@ -23,6 +23,12 @@ uniform float uLo;          // low  clip, in raw accumulation units
 uniform float uHi;          // high clip
 uniform float uWipe;        // 0..1 across the viewport; >= 1 disables
 uniform vec2  uViewport;
+// Tone curve, applied to the clipped value t in [0, 1]. Defaults (0, 1, 0) are
+// a plain linear ramp, which is what the app shipped with; the dev page
+// dev/looks.html drives them to compare.
+uniform float uKnee;        // asinh knee, 0 = off: t -> asinh(a t)/asinh(a)
+uniform float uGammaT;      // exponent on t, < 1 lifts the mid-tones
+uniform float uLift;        // floor of the colour ramp, keeps voids off pure black
 
 out vec4 outColor;
 
@@ -47,6 +53,9 @@ float accumSample(vec2 uv) {
 void main() {
   vec2 uv = gl_FragCoord.xy / uViewport;
   float t = clamp((accumSample(uv) - uLo) / max(uHi - uLo, 1e-9), 0.0, 1.0);
+  if (uKnee > 0.0) t = asinh(uKnee * t) / asinh(uKnee);
+  if (uGammaT != 1.0) t = pow(t, uGammaT);
+  t = uLift + (1.0 - uLift) * t;
   vec3 rgb = texture(uCmap, vec2(t, 0.5)).rgb;
 
   if (uv.x > uWipe) rgb = texture(uTruth, uv).rgb;

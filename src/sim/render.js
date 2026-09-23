@@ -161,7 +161,8 @@ export class Renderer {
   }
 
   /** Composite the accumulation buffer to `target` (null = the canvas). */
-  composite(target, { lo, hi, wipe = 2.0, baking = false } = {}) {
+  composite(target, { lo, hi, wipe = 2.0, baking = false,
+                      knee = 0, gammaT = 1, lift = 0 } = {}) {
     const gl = this.gl;
     gl.useProgram(this.postProg);
     gl.disable(gl.BLEND);
@@ -172,6 +173,9 @@ export class Renderer {
     gl.uniform1f(L.uLo, lo);
     gl.uniform1f(L.uHi, hi);
     gl.uniform1f(L.uWipe, wipe);
+    gl.uniform1f(L.uKnee, knee);
+    gl.uniform1f(L.uGammaT, gammaT);
+    gl.uniform1f(L.uLift, lift);
     gl.uniform2f(L.uViewport, this.W, this.H);
 
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.accum);
@@ -185,10 +189,10 @@ export class Renderer {
    * Same code path and the same seed as the live side, so at the truth
    * parameters the seam vanishes exactly rather than merely looking similar.
    */
-  bakeTruth(payload, params) {
+  bakeTruth(payload, params, tone = {}) {
     this.paint(payload, params);
-    const q = this.quantiles();
-    this.composite(this.truthFb, { ...q, wipe: 2.0, baking: true });
+    const q = this.quantiles(tone.q);
+    this.composite(this.truthFb, { ...q, ...tone, wipe: 2.0, baking: true });
     return q;
   }
 
