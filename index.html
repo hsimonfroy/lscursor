@@ -333,7 +333,7 @@ document.getElementById('reset').addEventListener('click', () => {
 const toggle = document.getElementById('statsToggle');
 const NARROW = window.matchMedia('(max-width: 860px)');
 const HASH = { pk: '#power', xi: '#2pcf' };
-let collapsed = true;
+let collapsed = true, applyingHash = false;
 function setCollapsed(c) {
   collapsed = c;
   statsPanel.classList.toggle('is-collapsed', c);
@@ -343,6 +343,7 @@ function setCollapsed(c) {
   if (!c) statsPlot.draw();     // it was display:none, so it had no size to draw into
 }
 function writeHash() {
+  if (applyingHash) return;   // reading a hash must not rewrite it half-applied
   const want = collapsed ? '' : HASH[statsPlot.stat];
   if ((location.hash || '') !== want) {
     history.replaceState(null, '', want || location.pathname + location.search);
@@ -351,8 +352,10 @@ function writeHash() {
 function readHash() {
   const h = location.hash.slice(1).toLowerCase();
   const stat = h === '2pcf' ? 'xi' : h === 'power' ? 'pk' : null;
+  applyingHash = true;
   if (stat) statsPlot.setStat(stat);
   setCollapsed(stat ? false : NARROW.matches);
+  applyingHash = false;
 }
 toggle.addEventListener('click', () => { setCollapsed(!collapsed); writeHash(); });
 window.addEventListener('hashchange', readHash);
