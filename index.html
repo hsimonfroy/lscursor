@@ -329,10 +329,12 @@ document.getElementById('reset').addEventListener('click', () => {
 // ---- folding the stats panel away ----
 // Open by default on a wide screen, closed on a narrow one where it would push
 // the map off screen. The URL hash carries the state so a link can share it:
-// #power or #2pcf opens the panel on that statistic, no hash leaves the default.
+// #power or #2pcf opens the panel on that statistic and #none closes it at any
+// width; no hash leaves the default. The hash only follows what you do, so a
+// link that never touched the panel carries none of this.
 const toggle = document.getElementById('statsToggle');
 const NARROW = window.matchMedia('(max-width: 860px)');
-const HASH = { pk: '#power', xi: '#2pcf' };
+const HASH = { pk: '#power', xi: '#2pcf', none: '#none' };
 let collapsed = true, applyingHash = false;
 function setCollapsed(c) {
   collapsed = c;
@@ -344,7 +346,7 @@ function setCollapsed(c) {
 }
 function writeHash() {
   if (applyingHash) return;   // reading a hash must not rewrite it half-applied
-  const want = collapsed ? '' : HASH[statsPlot.stat];
+  const want = collapsed ? HASH.none : HASH[statsPlot.stat];
   if ((location.hash || '') !== want) {
     history.replaceState(null, '', want || location.pathname + location.search);
   }
@@ -354,7 +356,7 @@ function readHash() {
   const stat = h === '2pcf' ? 'xi' : h === 'power' ? 'pk' : null;
   applyingHash = true;
   if (stat) statsPlot.setStat(stat);
-  setCollapsed(stat ? false : NARROW.matches);
+  setCollapsed(stat ? false : (h === 'none' || NARROW.matches));
   applyingHash = false;
 }
 toggle.addEventListener('click', () => { setCollapsed(!collapsed); writeHash(); });
