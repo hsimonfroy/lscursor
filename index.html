@@ -4,7 +4,27 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Large-Scale Cursor</title>
 <meta name="description" content="Tweaking the knobs of the cosmic web: an interactive large-scale-structure simulator in the browser.">
-<link rel="icon" href="data:,"><link rel="stylesheet" href="style.css">
+<meta name="author" content="Hugo Simon">
+<meta name="theme-color" content="#000000">
+<!-- Icons and link preview: the app's own field, drawn by dev/logo.html and
+     written by `node dev/makeicons.mjs`. Icons are transparent outside the disk;
+     the preview is opaque, because social cards pick their own background. -->
+<link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
+<link rel="icon" type="image/png" sizes="48x48" href="assets/icon-48.png">
+<link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="assets/icon-180.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Large-Scale Cursor">
+<meta property="og:url" content="https://hsimonfroy.github.io/lscursor/">
+<meta property="og:title" content="Large-Scale Cursor">
+<meta property="og:description" content="Tweaking the knobs of the cosmic web">
+<meta property="og:image" content="https://hsimonfroy.github.io/lscursor/assets/preview.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="512">
+<meta property="og:image:height" content="512">
+<meta property="og:image:alt" content="An observatory dome in front of a disk of simulated cosmic web">
+<meta name="twitter:card" content="summary">
+<link rel="stylesheet" href="style.css">
 <style>
   body { padding: 12px clamp(10px, 3vw, 20px) 8px; }
   /* Wide: controls and power spectrum stacked on the left, the map on the right.

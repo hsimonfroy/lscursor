@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lscursor — icon artwork</title>
+<link rel="icon" href="data:,"><link rel="stylesheet" href="../style.css">
+<style>
+  body { padding: 16px 20px 40px; }
+  .row { display: flex; gap: 24px; align-items: flex-end; flex-wrap: wrap; margin-top: 14px; }
+  .row figure { margin: 0; }
+  .row figcaption { font-size: 12px; color: var(--ink-muted); margin-top: 6px; text-align: center; }
+  /* the checkerboard shows what is transparent */
+  .row canvas { background-image: linear-gradient(45deg, #222 25%, transparent 25%),
+      linear-gradient(-45deg, #222 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #222 75%),
+      linear-gradient(-45deg, transparent 75%, #222 75%);
+    background-size: 16px 16px; background-position: 0 0, 0 8px, 8px -8px, -8px 0; }
+  #view { display: none; }
+  .note { font-size: 13px; color: var(--ink-muted); max-width: 76ch; }
+</style>
+</head>
+<body>
+<h1>Icon artwork</h1>
+<p class="note">A disk of the app's own field at the fiducial cosmology, cut from the 500 × 500 Mpc/h
+nearest the observer, with the dome standing in front of it. Designed on a 150 px square: disk
+150 px across and centred, dome at its native size, bottom-centred. <code>node dev/makeicons.mjs</code>
+writes every size into <code>assets/</code>.</p>
+<canvas id="view"></canvas>
+<div class="row" id="row"></div>
+
+<script type="module">
+import { createContext } from '../src/gl/context.js';
+import { Pipeline } from '../src/sim/pipeline.js';
+import { Renderer } from '../src/sim/render.js';
+import { createState, derive, GEOM } from '../src/state.js';
+
+const RES = 2000;                      // render the whole box this big, then crop
+const NEAR = 500;                      // Mpc/h square kept, from the observer's corner
+const TONE = { knee: 2.0, q: 1e-4 };   // the app's tone curve
+const DESIGN = 150;                    // the layout is specified on a square this big
+
+const view = document.getElementById('view');
+view.width = view.height = RES;
+const { gl, caps } = createContext(view, { preserveDrawingBuffer: true });
+if (!gl) { document.body.innerHTML = '<h1>WebGL2 unavailable</h1>'; throw new Error('no gl'); }
+
+const grid = { nx: GEOM.nXY, ny: GEOM.nXY, nz: GEOM.nZ, slabCells: GEOM.slabCells,
+               boxXY: GEOM.boxXY, boxZ: GEOM.boxXY * GEOM.nZ / GEOM.nXY };
+const pipe = new Pipeline(gl, grid);
+const payload = pipe.createPayload();
+const rend = new Renderer(gl, caps, { width: RES, height: RES, grid });
+const state = createState();
+const d = derive(state);
+pipe.run(d.cosmo, d.A, payload, { seed: 1, smoothR: 4.0 });
+rend.setCosmology(d.Omega_m);
+rend.paint(payload, { f: state.f, b1: state.b1, f0: d.f0 });
+rend.composite(null, { ...rend.quantiles(TONE.q), wipe: 2.0, knee: TONE.knee });
+
+const dome = new Image();
+dome.src = '../assets/observer2.png';
+await dome.decode();
+
+/**
+ * Compose one square icon of side S and return it as a PNG data URL.
+ * `opaque` paints the page's black behind it, for the link preview: a social
+ * card composites a transparent PNG on whatever background it likes.
+ */
+function icon(S, opaque = false) {
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  g.imageSmoothingQuality = 'high';
+  if (opaque) { g.fillStyle = '#000'; g.fillRect(0, 0, S, S); }
+
+  // the cosmic web, as a disk filling the square
+  g.save();
+  g.beginPath();
+  g.arc(S / 2, S / 2, S / 2, 0, 2 * Math.PI);
+  g.clip();
+  const crop = Math.round((RES * NEAR) / grid.boxXY);      // 500 Mpc/h, bottom-left
+  g.drawImage(view, 0, RES - crop, crop, crop, 0, 0, S, S);
+  g.restore();
+
+  // the dome, at its native size on the 150 px design, standing on the bottom edge
+  const k = S / DESIGN;
+  const dw = dome.naturalWidth * k, dh = dome.naturalHeight * k;
+  g.drawImage(dome, (S - dw) / 2, S - dh, dw, dh);
+  return { canvas: c, url: c.toDataURL('image/png') };
+}
+
+const SIZES = [512, 192, 180, 48, 32];
+const PREVIEW = 512;   // opaque, for og:image
+const row = document.getElementById('row');
+const made = {};
+const show = (canvas, label) => {
+  const fig = document.createElement('figure');
+  canvas.style.width = `${Math.min(canvas.width, 256)}px`;
+  fig.append(canvas);
+  const cap = document.createElement('figcaption');
+  cap.textContent = label;
+  fig.append(cap);
+  row.append(fig);
+};
+for (const S of SIZES) {
+  const { canvas, url } = icon(S);
+  made[S] = url;
+  show(canvas, `${S}×${S}`);
+}
+{
+  const { canvas, url } = icon(PREVIEW, true);
+  made.preview = url;
+  show(canvas, `preview ${PREVIEW}×${PREVIEW}, opaque`);
+}
+window.__icon = (S) => made[S] ?? icon(S).url;
+window.__preview = () => made.preview;
+window.__sizes = SIZES;
+window.__done = true;
+</script>
+</body>
+</html>
