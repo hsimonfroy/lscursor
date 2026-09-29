@@ -4,6 +4,7 @@
 //
 // The picture is composed in dev/logo.html by the app itself - same field, same
 // tone curve - so the tab icon, the link preview and the map always agree.
+// Writes icon-{512,192,180,48,32}.png; the 512 one doubles as the link preview.
 import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -30,11 +31,8 @@ const write = (name, url) => {
   writeFileSync(join(assets, name), png);
   console.log(`assets/${name}  ${(png.length / 1024).toFixed(0)} kB`);
 };
-// icons are transparent outside the disk; the link preview is opaque black,
-// since a social card composites transparency on whatever background it likes
 for (const size of await page.evaluate(() => window.__sizes)) {
   write(`icon-${size}.png`, await page.evaluate((s) => window.__icon(s), size));
 }
-write('preview.png', await page.evaluate(() => window.__preview()));
 console.log('errors:', errs.length ? errs : 'none');
 await browser.close();
