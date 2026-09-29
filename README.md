@@ -122,8 +122,10 @@ header. Without it a browser may keep serving stale ES modules after an edit
 - `dev/fft.html` — GPU FFT correctness against a reference DFT, plus timings
 - `dev/fields.html` — synthesised δ_L and Ψ against analytic mode-grid variances
 - `dev/energybar.html` — energy-content bar layout variants
-
 - `dev/slab.html` — the fast slab pipeline against the full 3-D reference
+- `dev/looks.html` — tone curve and colour map options for the map
+- `dev/stats.html` — statistic selector and phone layout options
+- `dev/logo.html` — the icon and link-preview artwork, drawn from the app's own field
 
 Or drive the gates headlessly (forces the real GPU, refuses SwiftShader numbers).
 The scripts need `playwright-core` (`npm i playwright-core`) and Chrome at
@@ -132,6 +134,9 @@ The scripts need `playwright-core` (`npm i playwright-core`) and Chrome at
 ```
 node dev/run-checks.mjs fields      # or fft, slab
 node dev/bench.mjs                  # frame timings
+node dev/viewports.mjs /tmp         # screenshots at desktop, laptop and phone sizes
+node dev/hashcheck.mjs              # the #power / #2pcf / #none URL contract
+node dev/makeicons.mjs              # regenerate assets/icon-*.png and preview.png
 ```
 
 Deployment is `git push`; GitHub Pages serves `main` at the repository root.
