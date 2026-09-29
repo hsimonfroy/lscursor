@@ -60,16 +60,14 @@ dome.src = '../assets/observer2.png';
 await dome.decode();
 
 /**
- * Compose one square icon of side S and return it as a PNG data URL.
- * `opaque` paints the page's black behind it, for the link preview: a social
- * card composites a transparent PNG on whatever background it likes.
+ * Compose one square icon of side S and return it as a PNG data URL,
+ * transparent outside the disk and the dome.
  */
-function icon(S, opaque = false) {
+function icon(S) {
   const c = document.createElement('canvas');
   c.width = c.height = S;
   const g = c.getContext('2d');
   g.imageSmoothingQuality = 'high';
-  if (opaque) { g.fillStyle = '#000'; g.fillRect(0, 0, S, S); }
 
   // the cosmic web, as a disk filling the square
   g.save();
@@ -88,7 +86,6 @@ function icon(S, opaque = false) {
 }
 
 const SIZES = [512, 192, 180, 48, 32];
-const PREVIEW = 512;   // opaque, for og:image
 const row = document.getElementById('row');
 const made = {};
 const show = (canvas, label) => {
@@ -105,13 +102,7 @@ for (const S of SIZES) {
   made[S] = url;
   show(canvas, `${S}×${S}`);
 }
-{
-  const { canvas, url } = icon(PREVIEW, true);
-  made.preview = url;
-  show(canvas, `preview ${PREVIEW}×${PREVIEW}, opaque`);
-}
 window.__icon = (S) => made[S] ?? icon(S).url;
-window.__preview = () => made.preview;
 window.__sizes = SIZES;
 window.__done = true;
 </script>

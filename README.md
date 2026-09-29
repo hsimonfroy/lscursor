@@ -136,7 +136,7 @@ node dev/run-checks.mjs fields      # or fft, slab
 node dev/bench.mjs                  # frame timings
 node dev/viewports.mjs /tmp         # screenshots at desktop, laptop and phone sizes
 node dev/hashcheck.mjs              # the #power / #2pcf / #none URL contract
-node dev/makeicons.mjs              # regenerate assets/icon-*.png and preview.png
+node dev/makeicons.mjs              # regenerate assets/icon-*.png (512 = link preview)
 ```
 
 Deployment is `git push`; GitHub Pages serves `main` at the repository root.
