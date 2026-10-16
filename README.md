@@ -1,151 +1,63 @@
-# lscursor — Large-Scale Cursor
+# Large-Scale Cursor
+An interactive simulator of the cosmic web: <https://hsimonfroy.github.io/lscursor/>
 
-*Tweaking the knobs of the cosmic web.*
+<div align="center">
+    <picture>
+        <img alt="lscursor" src="assets/icon-512.png" width="256">
+    </picture>
+</div>
 
-**Live: <https://hsimonfroy.github.io/lscursor/>**
+Inspired by Chris North's [Planck CMB Simulator](https://chrisnorth.github.io/planckapps/Simulator/), but for galaxy surveys instead of the CMB.
 
-An interactive large-scale-structure simulator, in the spirit of Chris North's
-[Planck CMB Simulator](https://chrisnorth.github.io/planckapps/Simulator/) — but
-for the thing cosmologists actually measure with galaxy surveys.
+Move the sliders to change the content of the Universe, and a 2D slice of the cosmic web updates in real time. A divider splits the map between your universe and a fixed "observation" generated from the same random seed. When your parameters match the observation, the seam vanishes. A side panel shows the power spectrum or the correlation function of both.
 
-Change the ingredients of the universe and watch a 2D slice of the cosmic web
-respond in real time. A wipe divider down the middle compares your universe
-against a fixed "observation" made from the same random seed: get the
-parameters right and the seam disappears. Next to it, the power spectrum of
-both.
 
-## What it computes
+## Features
+* Five parameters:
 
-A Zel'dovich (1LPT) galaxy density field in a 1280 Mpc/h box on a 256×256×64
-grid (5 Mpc/h cells, k_Nyquist = 0.63 h/Mpc), projected through an 8-cell
-(40 Mpc/h) slab. The observer sits in the bottom-left corner, so distance from
-that corner is comoving distance: the slice is a light cone running from z = 0
-out to z ≈ 0.73 at the far corner, and redshift-space distortions fan out in a
-quarter circle.
+  | slider | symbol | effect |
+  |---|---|---|
+  | Ordinary matter | Ω_b | baryon suppression, BAO wiggle amplitude |
+  | Dark matter | Ω_c | turnover scale k_eq, overall clumpiness |
+  | Dark energy | Ω_Λ | set by Ω_b + Ω_c + Ω_Λ = 1 |
+  | Redshift-space distortions | f | radial squashing of structures |
+  | Galaxy bias | b₁ | how strongly galaxies trace matter |
 
-Five sliders:
+* The observer sits in the bottom-left corner, so the slice is a light cone from z = 0 to z ≈ 0.73 at the far corner, and redshift-space distortions are radial.
+* The side panel shows the power spectrum P(k) or the two-point correlation function ξ(s). Click the axis labels to switch between log and linear scales. In linear k P(k) the BAO wiggles are visible, and in s²ξ(s) the BAO peak near 105 Mpc/h.
+* URL options:
+  * `#power`, `#2pcf` open the side panel on that statistic, `#none` closes it.
+  * `?norm=sigma8` holds σ₈ fixed instead of the primordial amplitude A_s (see below).
+* Works on desktop and mobile. Requires WebGL2 with float render targets (`EXT_color_buffer_float`).
 
-| slider | symbol | what it does |
-|---|---|---|
-| Ordinary matter | Ω_b | baryon acoustic suppression, BAO wiggle amplitude |
-| Dark matter | Ω_c | the turnover scale k_eq — how clumpy, and on what scale |
-| Dark energy | Ω_Λ | constrained so Ω_b + Ω_c + Ω_Λ = 1 |
-| Redshift-space distortions | f | radial squashing of structure |
-| Galaxy bias | b₁ | how much galaxies trace matter |
 
-The box is periodic in the plane, so no padding is needed: a particle leaving
-one edge re-enters through the opposite one, with its growth and RSD evaluated
-at the periodic image that is actually on screen.
+## Simulation
+* Zel'dovich (1LPT) galaxy field in a periodic 1280 Mpc/h box, on a 256×256×64 grid (5 Mpc/h cells, k_Nyquist = 0.63 h/Mpc), projected through an 8-cell (40 Mpc/h) slab.
+* Linear power spectrum from the Eisenstein & Hu (1998) transfer function, h fixed to Planck 2018.
+* By default A_s is fixed and σ₈ follows from the other parameters, so removing dark matter really does remove structure (σ₈ ≈ 0.08 at Ω_c = 0). With `?norm=sigma8`, σ₈ is fixed at 0.8102 and the Ω sliders only change the shape of P(k); far from the fiducial cosmology this implies an unphysical A_s (×116 at Ω_c = 0). Both modes agree at the fiducial cosmology, so the observation is the same.
+* The side panel plots linear theory, not a measurement of the map: the Kaiser monopole (b₁² + 2b₁f/3 + f²/5) P_lin(k) at z = 0, and its Hankel transform for ξ(s) (`src/cosmo/xi.js`). A 1280 Mpc/h box has too few large-scale modes for the BAO to survive cosmic variance in a measured spectrum. The map's own P(k) can still be computed from the console with `window.__measurePk()`.
+* The colour scale is fixed to the observation, between its 10⁻⁴ and 1 − 10⁻⁴ quantiles, with an `asinh(2t)/asinh(2)` stretch so that typical pixels are not lost in the dark end of the colour map. `dev/looks.html` compares other choices.
 
-The colour scale is fixed to the observation's range, so one colour means one
-weighted count per pixel on both sides of the wipe. The ends of that range are
-the 10⁻⁴ and 1 − 10⁻⁴ quantiles of the observation, and the ramp between them is
-`asinh(2t)/asinh(2)`: a linear ramp left a typical pixel at 0.07 of the colour
-map, deep in inferno's near-black end, where a dim screen shows nothing.
-`dev/looks.html` compares the alternatives side by side.
 
-`h` is held fixed. The amplitude has two modes, picked with `?norm=` in the URL:
+## Performance
+No data is precomputed or shipped, and the parameters are continuous. This relies on two facts:
+* b₁ and f only act at render time. In 1LPT the velocity is parallel to the displacement, so f rescales the radial component and b₁ is a per-particle weight. Both cost one draw call over ~500k points.
+* Ω_b and Ω_c only enter through the 1D function √P(k), applied to a fixed white noise field (the analogue of the Planck simulator's √C_ℓ filter).
 
-- **default**: the primordial amplitude `A_s` is held fixed and σ₈ floats, so
-  less dark matter really means less structure. Remove it entirely and the same
-  primordial fluctuations barely grow (σ₈ ≈ 0.08) — the classic argument for
-  dark matter.
-- `?norm=sigma8`: σ₈ held at Planck 2018's 0.8102, so the Ω sliders change only
-  the shape of P(k). Fine near the fiducial; far from it, it needs an
-  unphysical `A_s` (×116 at Ω_c = 0, i.e. CMB anisotropies ~11× too large).
+A change of Ω is therefore one synthesis pass in Fourier space followed by one inverse FFT. Only the 8 layers of the slab are needed, so the z-transform is evaluated directly at those layers during synthesis, and the x/y FFTs run on a volume 8× smaller. This is exact, matching the full 3D FFT to 1.2e-5.
 
-Both agree at the fiducial cosmology, so the observation is identical in either.
-Ω_b and Ω_m are floored at 10⁻⁴ inside the physics (EH98 divides by both), so
-the bar can sit at exactly zero.
+On an Intel RPL-U integrated GPU:
 
-## The summary statistics
+| action | time |
+|---|---|
+| change b₁, f, or move the divider | ~4 ms |
+| change Ω | 25–47 ms |
 
-The panel beside the map plots either the power spectrum or the two-point
-correlation function, picked from the tabs. The 2PCF is a Hankel transform of
-the same linear P(k) (`src/cosmo/xi.js`, 0.3 ms, checked to 1e-9 against a
-200k-point reference), shown as s²ξ(s) so the BAO bump near 105 Mpc/h stands up,
-or as plain ξ(s). The panel folds away at any width from the button beside
-reset; it starts open on a wide screen and closed on a narrow one, where it sits
-between the sliders and the map. `#power` or `#2pcf` in the URL opens it on that
-statistic and `#none` closes it at any width, so a link carries the state.
+Most of the remaining cost is split between synthesis and 2D FFT. Rendering all output layers at once (multiple render targets) and a radix-4 FFT would be the next improvements.
 
-The power-spectrum panel is linear theory, not a measurement: the Kaiser
-monopole (b₁² + 2b₁f/3 + f²/5) P_lin(k) at z = 0, from k = 10⁻³ up to the box's
-Nyquist frequency π/5 h/Mpc. It opens as log-log P(k); clicking the axis labels
-switches x between log and linear k, and y between log P(k) and linear k P(k),
-which is the view where the BAO wiggles show. A 1280 Mpc/h
-map has too few modes at those scales for the wiggles to survive cosmic
-variance. The map's own P(k) can still be measured for checks with
-`window.__measurePk()` (CPU FFT of the painted 256² field, `src/sim/pk.js`).
-
-The page sizes the map to the window height so the whole app fits on one
-screen, and all text uses fluid `clamp()` sizes that shrink smoothly on phones.
-
-## Why it is fast
-
-Two observations collapse what looks like a 4-dimensional precomputation problem
-down to nothing precomputed at all:
-
-1. **b₁ and f are render-time operations.** In 1LPT the velocity is parallel to
-   the displacement, so `f` is one multiply on the radial component and `b₁` is a
-   per-particle weight. Both are a single GPU draw over half a million points —
-   60 fps, always. The light cone is free the same way.
-2. **Ω_b and Ω_c enter only through the 1D curve √P(k)**, applied to a noise
-   field that never changes. That is exactly the Planck simulator's `sqrt(C_ℓ)`
-   filter, one dimension up.
-
-So a cosmology change is one fused synthesis pass (white noise generated
-directly in Fourier space, multiplied by √P(k), turned into displacement spectra)
-followed by **one** inverse FFT — see [Performance](#performance) for timings.
-
-The repository ships no data files. The Planck simulator carries 75 MB of
-precomputed spectra; lscursor carries none, and is continuous in the parameters
-rather than snapped to a grid.
-
-## Running it
-
-No build step, no dependencies, no bundler. Serve the directory and open
-`index.html` — the app:
-
-```
-python3 dev/serve.py            # http://127.0.0.1:8777/
-```
-
-It needs WebGL2 with float render targets (`EXT_color_buffer_float`), which
-covers current desktop and mobile browsers.
-
-`dev/serve.py` is `python3 -m http.server` plus a `Cache-Control: no-cache`
-header. Without it a browser may keep serving stale ES modules after an edit
-(VS Code's built-in browser does this reliably).
-
-- `dev/cosmo.html` — P(k), T(k), D(z), f(z) computed live by the app's own code
-- `dev/fft.html` — GPU FFT correctness against a reference DFT, plus timings
-- `dev/fields.html` — synthesised δ_L and Ψ against analytic mode-grid variances
-- `dev/energybar.html` — energy-content bar layout variants
-- `dev/slab.html` — the fast slab pipeline against the full 3-D reference
-- `dev/looks.html` — tone curve and colour map options for the map
-- `dev/stats.html` — statistic selector and phone layout options
-- `dev/logo.html` — the icon and link-preview artwork, drawn from the app's own field
-
-Or drive the gates headlessly (forces the real GPU, refuses SwiftShader numbers).
-The scripts need `playwright-core` (`npm i playwright-core`) and Chrome at
-`/usr/bin/google-chrome`:
-
-```
-node dev/run-checks.mjs fields      # or fft, slab
-node dev/bench.mjs                  # frame timings
-node dev/viewports.mjs /tmp         # screenshots at desktop, laptop and phone sizes
-node dev/hashcheck.mjs              # the #power / #2pcf / #none URL contract
-node dev/makeicons.mjs              # regenerate assets/icon-*.png (512 = link preview)
-```
-
-Deployment is `git push`; GitHub Pages serves `main` at the repository root.
 
 ## Validation
-
-The physics modules are checked against
-[`jax_cosmo`](https://github.com/DifferentiableUniverseInitiative/jax_cosmo) and
-`montecosmo`:
+Physics modules are compared against [`jax_cosmo`](https://github.com/DifferentiableUniverseInitiative/jax_cosmo) and `montecosmo`:
 
 | check | reference | result |
 |---|---|---|
@@ -155,54 +67,42 @@ The physics modules are checked against
 | `power.js` P_lin | `jax_cosmo.power.linear_matter_power` | 1.0e-4 |
 | GPU FFT vs naive DFT | in-browser, 8×8×4 | 2.7e-7 |
 | GPU FFT round trip | in-browser, 256×256×64 | 7.4e-6 |
-| Var[δ_L], Var[Ψ] | analytic sum over the mode grid | within 1σ of realisation scatter |
-| painted field mass conservation | mean deposit = slab depth | 4.042 vs 4 |
-| RSD isotropy at f = 0 | radial/tangential gradient = 1 | 1.010 |
 
-## Performance
+Field variances agree with the analytic sum over modes within realisation scatter, the painted field conserves mass, and RSD are isotropic at f = 0.
 
-Measured on an Intel RPL-U integrated GPU (the slow end), 256×256×64:
 
-| action | cost |
-|---|---|
-| `b₁`, `f`, or moving the wipe | **~4 ms** — paint only, no FFT |
-| `Ω` change | **25–47 ms** (20–40 fps while dragging; the spread is this GPU's clock state between runs, same code) |
+## Limitations
+* Large scales are under-clustered. The slab is selected on initial (Lagrangian) positions and the z-displacement is not computed, so matter flowing through the top and bottom of the slab is missing. The projected matter power is 5–7× too low at k ≲ 0.01 h/Mpc and 2× too low at 0.05 h/Mpc. Carrying Ψ_z and selecting particles on their final positions would fix this.
+* 1LPT only: particles cross each other after shell crossing, so the densest knots are too diffuse.
+* Linear physics: no massive neutrinos, linear Lagrangian bias, Kaiser RSD in the plotted statistics.
 
-The Ω cost started at 256 ms. Three things brought it down:
 
-1. **The z-transform is done first, and only where it is needed.** Only 8 of the
-   64 layers are drawn, and the inverse FFT is separable, so the z-sum is
-   evaluated directly at those 8 layers — fused with the noise synthesis, so the
-   full k-space cube is never written to memory. The x/y FFTs then run on a
-   volume 8× smaller. Exact, not an approximation: it matches the full 3-D FFT
-   to 1.2e-5. (3.0×)
-2. **Nothing that depends only on Ω is recomputed per frame.** Growth,
-   distances, σ₈ and the light-cone table are memoised; the chi→a inversion no
-   longer rebuilds its table 1024 times per change.
-3. **Less GPU traffic per frame**: a single-channel float accumulator (additive
-   float blending is the costliest thing in a frame on an iGPU), no payload
-   copy, and the distance arcs redrawn only when their labels can change.
+## Development
+No build step and no dependencies. Serve the directory and open `index.html`:
+```
+python3 dev/serve.py            # http://127.0.0.1:8777/
+```
+`dev/serve.py` is `python3 -m http.server` with a `Cache-Control: no-cache` header, so that browsers do not serve stale ES modules after an edit.
 
-Remaining cost is roughly half synthesis, half 2-D FFT. The next two levers are
-multiple render targets (each mode is currently synthesised once per output
-layer, i.e. 8× over) and a radix-4 FFT (half the passes).
+Test pages in `dev/`:
+* `cosmo.html`: P(k), T(k), D(z), f(z)
+* `fft.html`: GPU FFT against a reference DFT, and timings
+* `fields.html`: synthesised δ_L and Ψ against analytic variances
+* `slab.html`: slab pipeline against the full 3D reference
+* `energybar.html`, `looks.html`, `stats.html`: layout, tone curve and colour map variants
+* `logo.html`: icon artwork
 
-`dev/bench.mjs` reproduces these numbers.
+Headless scripts (need `playwright-core` and Chrome at `/usr/bin/google-chrome`):
+```
+node dev/run-checks.mjs fields      # or fft, slab
+node dev/bench.mjs                  # frame timings
+node dev/viewports.mjs /tmp         # screenshots at desktop, laptop and phone sizes
+node dev/hashcheck.mjs              # URL hash behaviour
+node dev/makeicons.mjs              # regenerate assets/icon-*.png
+```
 
-## Known limitations
+GitHub Pages serves `main` from the repository root.
 
-- **Large scales are under-clustered.** The 40 Mpc/h slab is selected by
-  particles' initial (Lagrangian) positions and their z-displacement is never
-  computed, so the flow of matter through the slab's top and bottom faces is
-  missing. In linear theory the projected matter power comes out 5–7× too low at
-  k ≲ 0.01 h/Mpc and 2× too low at 0.05 h/Mpc; the galaxy weights partly mask
-  it. The fix is to carry Ψ_z and select particles by their final position.
-- **1LPT only.** Zel'dovich particles pass through each other after shell
-  crossing, so the densest knots are too diffuse.
-- **Linear physics throughout**: Eisenstein & Hu (1998) transfer function (no
-  massive neutrinos), linear Lagrangian bias, Kaiser RSD in the plotted spectrum.
 
 ## Licence
-
-MIT, see [LICENSE](LICENSE). The title face, `assets/fonts/Z003-MediumItalic.otf` (URW Z003, from the
-urw-base35 set, same file as hollved), is AGPL-3.0 with a font exception.
+MIT, see [LICENSE](LICENSE). The title font `assets/fonts/Z003-MediumItalic.otf` (URW Z003, from urw-base35) is AGPL-3.0 with a font exception.
